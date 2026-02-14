@@ -1,0 +1,21 @@
+
+.venv/
+
+# Python Cache (File sampah otomatis Python)
+__pycache__/
+*.pyc
+
+# Environment Variables (SANGAT PENTING: Agar API Key tidak bocor)
+.env
+
+# Folder Output & Log Aplikasi
+Temp/
+*.log
+debug.log*
+
+# Aset Besar & Binary (Agar repo tidak berat, user lain harus download sendiri sesuai README)
+fonts/
+models/
+*.exe
+*.tflite
+
