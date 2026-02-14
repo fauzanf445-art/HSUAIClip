@@ -1,4 +1,4 @@
-from .engine import SummarizeEngine, SetupEngine
+from .engine import SetupEngine , SummarizeEngine
 from .interface import ConsoleUI
 
 #  <-- jika nanti ada file analyzer.py
