@@ -1,18 +1,16 @@
-from clipper import SummarizeEngine, ConsoleUI, SetupEngine
+from clipper import run_project, ConsoleUI, SetupEngine
 
 def main():
     ConsoleUI.print_banner()
 
     try:
-        # Setup awal sistem (Logging, Folder, Dependensi)
         setup = SetupEngine()
         setup.run_system_check()
 
         url = ConsoleUI.get_user_url()
         if not url: return
         
-        app_engine = SummarizeEngine(url)
-        result_dir = app_engine.run_summarization()
+        result_dir = run_project(url)
         
         ConsoleUI.show_completion(result_dir)
 

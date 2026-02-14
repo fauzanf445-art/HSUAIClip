@@ -1,6 +1,6 @@
 import logging
 import json
-import os
+import shutil
 from pathlib import Path
 from typing import Optional, Dict, Any
 
@@ -8,7 +8,7 @@ from .modules.downloader import Downloader, DownloaderSetup
 from .modules.summarizer import GeminiSummarizer, GeminiSetup
 from .interface import ConsoleUI
 from .core import ProjectCore
-from .utils import FFmpegUtils
+from . import utils
 
 class SetupEngine:
     """
@@ -23,6 +23,46 @@ class SetupEngine:
         """Menjalankan verifikasi aset sistem (FFmpeg, Model, dll)."""
         logging.info("⚙️ Menjalankan pemeriksaan sistem...")
         self.core.verify_assets()
+
+class CreateClipEngine:
+    """
+    Engine khusus untuk menangani pembuatan klip (Download & Re-encode).
+    """
+    def __init__(self, url: str, work_dir: Path, video_info: Optional[Dict[str, Any]] = None, cookies_path: Optional[Path] = None):
+        self.url = url
+        self.work_dir = work_dir
+        self.video_info = video_info
+        self.cookies_path = cookies_path
+
+    def run(self):
+        try:
+            logging.info("Tahap 3: Memproses klip...")
+            summary_path = self.work_dir / "summary.json"
+            if not summary_path.exists():
+                logging.warning("Summary.json tidak ditemukan, melewati pembuatan klip.")
+                return
+
+            data = json.loads(summary_path.read_text(encoding='utf-8'))
+            clips = data.get('clips', [])
+            
+            if not clips:
+                logging.warning("Tidak ada data klip dalam summary.")
+                return
+            
+            progress_hook = utils.downloader_progress_hook
+            ffmpeg_args = utils.get_ffmpeg_args()
+            ffmpeg_path = ProjectCore.find_executable("ffmpeg")
+
+            # Gunakan video_info yang sudah ada agar tidak perlu fetch ulang
+            cookie_path_str = str(self.cookies_path) if self.cookies_path and self.cookies_path.exists() else None
+            downloader = Downloader(self.url, output_dir=self.work_dir, cookies_path=cookie_path_str, video_info=self.video_info, download_progress_hook=progress_hook,ffmpeg_path=ffmpeg_path, ffmpeg_vd_args=ffmpeg_args)
+            
+            mkv_files = downloader.download_clips(clips)
+            if mkv_files:
+                logging.info(f"✅ {len(mkv_files)} klip berhasil dibuat dan siap digunakan.")
+
+        except Exception as e:
+            logging.error(f"Gagal memproses klip: {e}")
 
 class SummarizeEngine:
     def __init__(self, url: str):
@@ -60,7 +100,7 @@ class SummarizeEngine:
         """Tahap 0: Muat prompt (API Key diasumsikan sudah valid dari main)."""
         try:
             DownloaderSetup.check_and_setup_cookies(self.paths.COOKIE_FILE)
-            logging.info("Tahap 0: Memuat prompt...")
+            logging.info(" Memuat prompt...")
             self.prompt_text = GeminiSetup.load_prompt(self.paths.PROMPT_FILE)
         except Exception as e:
             raise RuntimeError(f"Gagal pada tahap persiapan: {e}") from e
@@ -70,34 +110,22 @@ class SummarizeEngine:
         try:
             logging.info("Tahap 1: Memulai proses download...")
             cookie_path = str(self.paths.COOKIE_FILE) if self.paths.COOKIE_FILE.exists() else None
-            downloader = Downloader(self.url, output_dir=work_dir, cookies_path=cookie_path, video_info=video_info)
+            downloader_progress_hook = utils.downloader_progress_hook
+            downloader = Downloader(self.url, output_dir=work_dir, cookies_path=cookie_path, video_info=video_info, download_progress_hook=downloader_progress_hook)
             
             # 1. Cek Cache Audio Final
             final_audio_path = work_dir / "audio_for_ai.mp3"
             if not (final_audio_path.exists() and final_audio_path.stat().st_size > 10240):
-                logging.info("File audio final tidak ditemukan atau tidak valid. Memulai proses download & konversi.")
-                raw_path = None
-                try:
-                    # 2. Download Raw
-                    raw_path = downloader.download_raw_audio()
-                    if not raw_path:
-                        raise RuntimeError("Gagal mengunduh audio mentah.")
-                    
-                    # 3. Convert using the new util function
-                    exe_ext = ".exe" if os.name == 'nt' else ""
-                    ffmpeg_path = ProjectCore.find_executable(f"ffmpeg{exe_ext}")
-                    ffprobe_path = ProjectCore.find_executable(f"ffprobe{exe_ext}")
-                    
-                    if not ffmpeg_path or not ffprobe_path:
-                        raise FileNotFoundError("❌ FFmpeg atau FFprobe tidak ditemukan.")
-
-                    total_sec = FFmpegUtils.get_duration(raw_path, ffprobe_path)
-                    ffmpeg_cmd = [str(ffmpeg_path), '-i', str(raw_path), '-y', '-vn', '-b:a', '192k', str(final_audio_path)]
-                    
-                    FFmpegUtils.run_command(ffmpeg_cmd, total_sec, label="Konversi Audio")
-                finally:
-                    if raw_path and raw_path.exists():
-                        raw_path.unlink()
+                logging.info("File audio final tidak ditemukan. Memulai proses download...")
+                
+                # 2. Download Audio (Langsung MP3 dari Downloader)
+                audio_path = downloader.download_raw_audio()
+                if not audio_path or not audio_path.exists():
+                    raise RuntimeError("Gagal mengunduh audio.")
+                
+                # 3. Rename ke nama final yang diinginkan engine
+                if audio_path != final_audio_path:
+                    shutil.move(str(audio_path), str(final_audio_path))
 
             transcript_path = downloader.download_transcript()
             transcript_text = transcript_path.read_text(encoding='utf-8') if transcript_path else ""
@@ -145,20 +173,28 @@ class SummarizeEngine:
         # --- VALIDASI TAHAP AWAL (CACHING) ---
         # Cek apakah summary.json sudah ada dan valid
         summary_file = work_dir / "summary.json"
+        need_analysis = True
+
         if summary_file.exists():
             try:
                 content = summary_file.read_text(encoding='utf-8')
                 if content and json.loads(content):
                     logging.info("♻️ Cache ditemukan: summary.json sudah ada dan valid. Melewati analisis AI.")
-                    return work_dir
+                    need_analysis = False
             except json.JSONDecodeError:
                 logging.warning("⚠️ File summary.json ditemukan tapi korup. Memulai ulang proses.")
         
         # --- PROSES UTAMA ---
-        # Cek apakah audio sudah ada (Downloader menanganinya, tapi kita panggil untuk memastikan path)
-        audio_path, transcript_text = self._download_media(work_dir, video_info)
+        if need_analysis:
+            audio_path, transcript_text = self._download_media(work_dir, video_info)
+            self._analyze_with_ai(audio_path, transcript_text, work_dir)
         
-        self._analyze_with_ai(audio_path, transcript_text, work_dir)
+        clip_engine = CreateClipEngine(self.url, work_dir, video_info, self.paths.COOKIE_FILE)
+        clip_engine.run()
 
         logging.info("✅ Semua tahap berhasil diselesaikan.")
         return work_dir
+
+def run_project(url: str) -> Path:
+    engine = SummarizeEngine(url)
+    return engine.run_summarization()

@@ -2,9 +2,9 @@ import yt_dlp
 import json
 import urllib.request
 import logging
+import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any, cast
-
+from typing import Optional, Dict, Any, cast, List
 
 class DownloaderSetup:
     def __init__(self, url: str, cookies_path: Optional[str] = None):
@@ -85,14 +85,22 @@ class DownloaderSetup:
 
     def get_info(self) -> Optional[Dict[str, Any]]:
         return self._get_info()
+    
+    
 
 class Downloader:
-    def __init__(self, url: str, output_dir: Any, cookies_path: Optional[str] = None, video_info: Optional[Dict[str, Any]] = None):
+    def __init__(self, url: str, output_dir: Any, cookies_path: Optional[str] = None, download_progress_hook: Optional[Any] = None, postprocessor_hooks: Optional[Any]= None,
+        video_info: Optional[Dict[str, Any]] = None,ffmpeg_path: Optional[str] = None, ffmpeg_vd_args: Optional[List[str]] = None):
+        
         self.url = url
         self.cookies_path = cookies_path
         self.output_dir = Path(output_dir)
         self.video_info = video_info
-    
+        self.progress_hook = download_progress_hook
+        self.postprocessor_hooks = postprocessor_hooks
+        self.ffmpeg_path = ffmpeg_path 
+        self.ffmpeg_args = ffmpeg_vd_args
+
     def _parse_subtitle_json(self, target_url: str) -> Optional[str]:
         """Helper untuk mengunduh dan memparsing JSON3 subtitle."""
         try:
@@ -208,29 +216,137 @@ class Downloader:
 
     def download_raw_audio(self) -> Optional[Path]:
         """
-        Mengunduh audio mentah (kualitas terbaik) dari YouTube tanpa konversi.
+        Mengunduh audio dan langsung mengkonversinya ke MP3 menggunakan postprocessor.
         """
-        raw_audio_tmpl = "audio_raw.%(ext)s"
+        # Pattern untuk file raw
+        output_filename = "audio_raw"
+        
         opts: Any = {
             'format': 'bestaudio/best',
-            'outtmpl': raw_audio_tmpl,
+            'outtmpl': f"{output_filename}.%(ext)s",
             'paths': {'home': str(self.output_dir)},
             'cookiefile': self.cookies_path,
-            'quiet': False,
-            'no_warnings': False,
+            'quiet': False,       # Izinkan output log (agar terlihat saat FFmpeg bekerja)
+            'noprogress': True,   # Matikan bar bawaan yt-dlp (gunakan punya kita saja)
+            'no_warnings': True,
             'logger': logging.getLogger(__name__),
+            'ffmpeg_location': self.ffmpeg_path,
+            'progress_hooks': [self.progress_hook] if self.progress_hook else [],
+            'postprocessor_hooks': [self.postprocessor_hooks] if self.postprocessor_hooks else [],
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': '192',
+            }],
         }
 
-        logging.info("⏳ Memulai download audio mentah...")
+        logging.info("⏳ Memulai download & konversi audio...")
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(self.url, download=True)
-                downloaded_file = ydl.prepare_filename(info)
-                path = Path(downloaded_file)
-                if path.exists():
-                    logging.info(f"✅ Audio mentah berhasil diunduh: {path.name}")
-                    return path
+                ydl.download([self.url])
+            
+            # Karena kita force mp3, file hasil pasti berakhiran .mp3
+            expected_path = self.output_dir / f"{output_filename}.mp3"
+            
+            if expected_path.exists():
+                logging.info(f"✅ Audio berhasil diunduh: {expected_path.name}")
+                return expected_path
+                
         except Exception as e:
             logging.error(f"❌ Gagal download audio: {e}")
         
         return None
+
+    def download_clips(self, clips_data: List[Dict[str, Any]]) -> List[Path]:
+        """
+        Mengunduh potongan klip spesifik berdasarkan data (biasanya dari summary.json).
+        Menggunakan fitur download_ranges yt-dlp untuk efisiensi bandwidth (Batch Download).
+        """
+
+        if not clips_data:
+            logging.warning("⚠️ Tidak ada data klip untuk diunduh.")
+            return []
+        
+        clips_dir = self.output_dir / "clips"
+        clips_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Gunakan folder temp untuk memastikan kita menangkap file yang benar
+        temp_dl_dir = clips_dir / "temp_dl"
+        if temp_dl_dir.exists():
+            shutil.rmtree(temp_dl_dir)
+        temp_dl_dir.mkdir(parents=True, exist_ok=True)
+
+        # 1. Kumpulkan semua range waktu
+        ranges: List[Dict[str, float]] = []
+        for c in clips_data:
+            # Dukung berbagai format key (start_time dari JSON atau start umum)
+            start = c.get('start_time')
+            if start is None:
+                start = c.get('start')
+            
+            end = c.get('end_time')
+            if end is None:
+                end = c.get('end')
+
+            if start is not None and end is not None:
+                ranges.append({'start_time': float(start), 'end_time': float(end)})
+
+        if not ranges:
+            logging.warning("⚠️ Tidak ada timestamp valid dalam daftar klip.")
+            return []
+
+        logging.info(f"✂️ Mengunduh {len(ranges)} klip secara batch...")
+
+        # 2. Konfigurasi yt-dlp dengan download_ranges
+        # Argumen FFmpeg diambil dari self.ffmpeg_args yang disuntikkan dari engine
+        if not self.ffmpeg_args:
+            logging.error("❌ FFmpeg args tidak ditemukan. Proses download klip dibatalkan.")
+            return []
+
+        def download_ranges_callback(info: Dict[str, Any], ydl: Any) -> List[Dict[str, float]]:
+            return ranges
+
+        opts: Any = {
+            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
+            'paths': {'home': str(temp_dl_dir)},
+            'outtmpl': "clip_%(section_start)s-%(section_end)s.%(ext)s",
+            'download_ranges': download_ranges_callback,
+            'force_keyframes_at_cuts': True,
+            'cookiefile': self.cookies_path,
+            'quiet': False,       # Izinkan output log
+            'noprogress': True,   # Matikan bar bawaan yt-dlp
+            'no_warnings': True,
+            'logger': logging.getLogger(__name__),
+            'ffmpeg_location': self.ffmpeg_path,
+            'progress_hooks': [self.progress_hook] if self.progress_hook else [],
+            'postprocessor_hooks': [self.postprocessor_hooks] if self.postprocessor_hooks else [],
+            'postprocessors': [{
+                'key': 'FFmpegVideoConvertor',
+                'preferedformat': 'mkv',
+            }],
+            'postprocessor_args': {
+                'FFmpegVideoConvertor': self.ffmpeg_args,
+            },
+        }
+
+        downloaded_files: List[Path] = []
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([self.url])
+            
+            # 3. Pindahkan file dari temp ke folder tujuan
+            for f in temp_dl_dir.iterdir():
+                if f.is_file() and f.suffix in ['.mp4', '.mkv', '.webm']:
+                    dst_path = clips_dir / f.name
+                    # Overwrite jika ada
+                    shutil.move(str(f), str(dst_path))
+                    downloaded_files.append(dst_path)
+                    logging.info(f"✅ Berhasil: {dst_path.name}")
+            
+            # Bersihkan temp
+            shutil.rmtree(temp_dl_dir, ignore_errors=True)
+            
+        except Exception as e:
+            logging.error(f"❌ Gagal melakukan batch download clips: {e}")
+
+        return downloaded_files

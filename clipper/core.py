@@ -43,10 +43,13 @@ class ProjectCore:
         ]
     }
 
+    _assets_verified = False
+
     def __init__(self):
         self.paths = self._setup_paths()        
         self._setup_logging()
         self._create_folder_structure()
+        self._inject_path()
         
         logging.info("🚀 ProjectCore: Infrastruktur siap digunakan.")
 
@@ -78,6 +81,7 @@ class ProjectCore:
             "FONTS_DIR": BASE_DIR / "fonts",
             "FILE_DIR": BASE_DIR / "files",
             "MODELS_DIR": BASE_DIR / "models",
+            "BIN_DIR": BASE_DIR / "bin",
         }
 
         # 3. Sub-folder (Workspace)
@@ -104,6 +108,13 @@ class ProjectCore:
             if not p_path.exists():
                 logging.info(f"📁 Folder {p_name} dibuat.")
                 p_path.mkdir(parents=True, exist_ok=True)
+
+    def _inject_path(self):
+        """Menyuntikkan folder bin ke PATH sementara agar subprocess bisa memanggil ffmpeg."""
+        bin_dir = str(self.paths.BIN_DIR)
+        if bin_dir not in os.environ['PATH']:
+            os.environ['PATH'] = bin_dir + os.pathsep + os.environ['PATH']
+            logging.info(f"💉 Path Injection: {self.paths.BIN_DIR.name} ditambahkan ke PATH.")
 
     def _setup_logging(self):
         """Mengaktifkan logging ke file debug.log (INFO+). Console (Hanya ERROR)."""
@@ -132,8 +143,13 @@ class ProjectCore:
 
     def verify_assets(self):
         """Memastikan semua aset eksternal (model) tersedia."""
+        if ProjectCore._assets_verified:
+            return
+
         self._verify_mediapipe_files(self.paths.FACE_LANDMARKER_FILE)
         self._verify_dependencies()
+        
+        ProjectCore._assets_verified = True
 
     def _verify_mediapipe_files(self, path: Path) -> None:
         """Verifikasi file krusial dan unduh jika tidak ada."""
@@ -237,7 +253,7 @@ class ProjectCore:
 
             logging.warning(f"📥 Dependensi '{dep_info['name']}' tidak ditemukan. Memulai unduhan...")
             
-            base_dir = self.paths.BASE_DIR
+            base_dir = self.paths.BIN_DIR
             target_path = base_dir / str(dep_info["target_filename"])
             url = dep_info["url"]
             archive_path_suffix = dep_info["archive_path"]
@@ -270,10 +286,10 @@ class ProjectCore:
         if local_path.exists() and local_path.is_file():
             return str(local_path)
         
-        # 2. Cek CWD (Current Working Directory) - Jaga-jaga
-        cwd_path = Path.cwd() / name
-        if cwd_path.exists() and cwd_path.is_file():
-            return str(cwd_path)
+        # 2. Cek folder bin (Standar baru)
+        bin_path = base_path / "bin" / name
+        if bin_path.exists() and bin_path.is_file():
+            return str(bin_path)
 
         # 3. Cek PATH Sistem
         
