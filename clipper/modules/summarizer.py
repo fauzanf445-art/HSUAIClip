@@ -1,42 +1,22 @@
 import json
+import re
 import logging
 import time
-import os
 from pathlib import Path
-from typing import Optional, List, Any, Union
+from typing import Optional, List, Any, Union, Dict
 
 from google import genai
 from google.genai import types, errors
 
-from dotenv import load_dotenv, set_key
-
-class GeminiSetup:
+class Summarizer:
     """
-    Kelas utilitas untuk persiapan awal sebelum proses berat dimulai.
-    Menangani validasi API Key dan Prompt.
+    Membuat ringkasan dari transkrip, dan audio dengan gemini.
     """
-    @staticmethod
-    def validate_api_key(env_path: Path) -> str:
-        """
-        Memastikan API Key valid dari file .env.
-        Raises: ValueError jika key tidak ditemukan atau tidak valid.
-        """
-        
-        # Pastikan file .env ada
-        if not env_path.exists():
-            env_path.touch()
-
-        load_dotenv(dotenv_path=env_path)
-        api_key = os.getenv("GEMINI_API_KEY")
-
-        if not api_key:
-            raise ValueError("API Key tidak ditemukan di konfigurasi.")
-
-        if not GeminiSetup.check_key_validity(api_key):
-            raise ValueError("API Key yang tersimpan tidak valid.")
-
-        logging.info("✅ API Key terverifikasi valid.")
-        return api_key
+    
+    def __init__(self, api_key: str, model_name: str = "gemini-flash-latest"):
+        self.api_key = api_key
+        self.model_name = model_name
+        self.client = genai.Client(api_key=self.api_key)
 
     @staticmethod
     def check_key_validity(key: str) -> bool:
@@ -49,30 +29,16 @@ class GeminiSetup:
             logging.error(f"Validasi API Key gagal: {e}")
             return False
 
-    @staticmethod
-    def save_api_key(env_path: Path, key: str) -> None:
-        """Menyimpan API Key ke file .env."""
-        set_key(str(env_path), "GEMINI_API_KEY", key)
+    def _clean_json_text(self, text: str) -> str:
+        """Membersihkan markdown code blocks dari string JSON."""
+        # Regex untuk menangkap konten di dalam ```json ... ``` atau ``` ... ```
+        pattern = r"^```(?:json)?\s*(.*?)\s*```$"
+        match = re.search(pattern, text.strip(), re.DOTALL)
+        if match:
+            return match.group(1)
+        return text.strip()
 
-    @staticmethod
-    def load_prompt(prompt_path: Path) -> str:
-        if not prompt_path.exists():
-            raise FileNotFoundError(f"❌ File prompt tidak ditemukan di: {prompt_path}")
-            
-        return prompt_path.read_text(encoding='utf-8')
-
-class GeminiSummarizer:
-    """
-    Membuat ringkasan dari transkrip, dan audio dengan gemini.
-    """
-    
-    def __init__(self, api_key: str, model_name: str = "gemini-flash-latest", output_path: Optional[Path] = None):
-        self.api_key = api_key
-        self.model_name = model_name
-        self.output_path = output_path
-        self.client = genai.Client(api_key=self.api_key)
-
-    def generate_summary_from_multimodal_inputs(self, prompt_template: str, transcript_text: str, audio_file_path: Path) -> Any:
+    def generate_summary_from_multimodal_inputs(self, prompt_template: str, transcript_text: str, audio_file_path: Path) -> Dict[str, Any]:
         """
         Memproses prompt, transkrip, dan file audio untuk menghasilkan ringkasan.
         """
@@ -93,7 +59,7 @@ class GeminiSummarizer:
                 with audio_file_path.open('rb') as audio_data:
                     uploaded_file = self.client.files.upload(
                         file=audio_data,
-                        config={'mime_type': 'audio/mp3'}
+                        config={'mime_type': 'audio/mpeg'}
                     )
                 
                 # Tunggu proses indexing di server Google
@@ -124,7 +90,7 @@ class GeminiSummarizer:
                                 "title": types.Schema(type=types.Type.STRING),
                                 "start_time": types.Schema(type=types.Type.NUMBER),
                                 "end_time": types.Schema(type=types.Type.NUMBER),
-                                "duration": types.Schema(type=types.Type.STRING),
+                                "duration": types.Schema(type=types.Type.NUMBER),
                                 "energy_score": types.Schema(type=types.Type.INTEGER),
                                 "vocal_energy": types.Schema(type=types.Type.STRING),
                                 "audio_justification": types.Schema(type=types.Type.STRING),
@@ -139,7 +105,7 @@ class GeminiSummarizer:
             )
 
             # 3. Kirim permintaan ke model AI dan minta output JSON
-            logging.info("Mengirim permintaan multimodal ke Gemini...")
+            logging.debug("Mengirim permintaan multimodal ke Gemini...")
             response = self.client.models.generate_content( # type: ignore
                 model=self.model_name,
                 contents=content_parts,
@@ -148,29 +114,14 @@ class GeminiSummarizer:
                     response_schema=summary_schema
                 )
             )
-            summary = response.text
-
-            if self.output_path and summary:
-                json_output_path = self.output_path / "summary.json"
-                try:
-                    # Parsing langsung (dijamin valid oleh schema)
-                    parsed_json = json.loads(summary)
-                    
-                    # Simpan dengan format rapi
-                    json_output_path.write_text(
-                        json.dumps(parsed_json, indent=2, ensure_ascii=False), 
-                        encoding='utf-8'
-                    )
-                    logging.info(f"💾 File JSON disimpan di: {json_output_path}")
-                except Exception as e:
-                    logging.error(f"❌ Gagal menyimpan summary.json: {e}")
-                    (self.output_path / "summary_raw_error.txt").write_text(summary, encoding='utf-8')
-            return summary
+            
+            # Return parsed JSON object directly
+            clean_text = self._clean_json_text(str(response.text))
+            return json.loads(clean_text)
 
         except errors.APIError as e:
             logging.error(f"API Error: {e}")
-            error_msg = f'{{"error": "Gagal interaksi Gemini API", "detail": "{e}"}}'
-            return error_msg
+            raise
 
         finally:
             if uploaded_file:

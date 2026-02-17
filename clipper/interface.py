@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 class ConsoleUI:
     """Menangani interaksi antarmuka pengguna berbasis konsol."""
@@ -47,16 +47,79 @@ class ConsoleUI:
         return url
 
     @staticmethod
+    def get_manual_timestamps() -> Optional[List[Dict[str, Any]]]:
+        """Meminta input timestamp manual dari pengguna."""
+        print("\n👉 (Opsional) Masukkan timestamp manual (detik).")
+        print("   Format: start-end, start-end (Contoh: 60-90, 125.5-150)")
+        
+        while True:
+            user_input = input("   [Kosongkan untuk analisis AI]: ").strip()
+            
+            if not user_input:
+                return None
+            
+            clips: List[Dict[str, Any]] = []
+            try:
+                # Split berdasarkan koma
+                parts = user_input.split(',')
+                for part in parts:
+                    if '-' not in part: continue
+                    start_str, end_str = part.split('-')
+                    start = float(start_str.strip())
+                    end = float(end_str.strip())
+                    
+                    if start >= end:
+                        print(f"⚠️  Timestamp tidak valid (Start >= End): {part}")
+                        continue
+                        
+                    clips.append({
+                        'title': f"Manual Clip {len(clips)+1}",
+                        'start_time': start,
+                        'end_time': end,
+                        'duration': end - start,
+                        'description': "Manual timestamp",
+                        'energy_score': 0,
+                        'vocal_energy': "Unknown",
+                        'audio_justification': "Manual",
+                        'caption': ""
+                    })
+                
+                if not clips:
+                    print("❌ Tidak ada timestamp valid yang ditemukan. Silakan coba lagi.")
+                    continue
+                    
+                return clips
+                
+            except ValueError:
+                print("❌ Format salah. Harap gunakan angka dan tanda hubung (-). Silakan coba lagi.")
+                continue
+
+    @staticmethod
     def show_progress(step_name: str):
         print(f"\n🚀 Memulai: {step_name}...", end="", flush=True)
 
     @staticmethod
-    def show_completion(summarize_dir: Path):
-        summary_file = summarize_dir / "summary.json"
+    def show_summary_completion(summary_dir: Path):
+        """Menampilkan pesan setelah tahap analisis AI selesai."""
+        summary_file = summary_dir / "summary.json"
         if summary_file.exists() and summary_file.stat().st_size > 0:
-            print(f"\n✨ Analisis Selesai! Hasil: {summary_file}")
+            print(f"\n✨ Analisis Selesai! Hasil disimpan di: {summary_file}")
         else:
-            print(f"\n⚠️  Selesai, tapi file output tidak ditemukan.")
+            print(f"\n⚠️  Analisis selesai, tapi file summary.json tidak ditemukan atau kosong.")
+
+    @staticmethod
+    def show_clips_completion(clips: List[Path]):
+        """Menampilkan pesan setelah semua klip berhasil dibuat."""
+        if not clips:
+            print("\n⚠️  Proses pembuatan klip selesai, namun tidak ada klip yang dihasilkan.")
+            return
+        
+        print(f"\n✨ Selesai! {len(clips)} klip berhasil dibuat:")
+        for path in clips:
+            print(f"   🎬 {path.name}")
+        
+        if clips:
+            print(f"\n📂 Folder Output: {clips[0].parent}")
 
     @staticmethod
     def show_error(message: str, error: Exception):

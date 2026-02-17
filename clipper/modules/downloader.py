@@ -1,26 +1,29 @@
-import yt_dlp
 import json
 import urllib.request
 import logging
-import shutil
 from pathlib import Path
-from typing import Optional, Dict, Any, cast, List
+from typing import Optional, Dict, Any, cast, Union
 
-class DownloaderSetup:
-    def __init__(self, url: str, cookies_path: Optional[str] = None):
+import yt_dlp
+from yt_dlp.utils import download_range_func
+
+class Downloader:
+    def __init__(self, url: str, cookies_path: Optional[Union[str, Path]] = None, download_progress_hook: Optional[Any] = None, video_info: Optional[Dict[str, Any]] = None):
+        
         self.url = url
         self.cookies_path = cookies_path
-        self.video_info: Optional[Dict[str, Any]] = None
+        self.video_info = video_info
+        self.download_progress_hook = download_progress_hook
     
     @staticmethod
-    def check_and_setup_cookies(cookies_path: Any) -> Optional[Path]:
+    def check_and_setup_cookies(cookies_path: Union[str, Path]) -> Optional[Path]:
         """
         Mengecek dan membantu pengguna membuat file cookies jika diperlukan.
         Mencoba mengambil cookies dari berbagai browser secara otomatis.
         """        
         path_obj = Path(cookies_path)
         if path_obj.exists():
-            logging.info(f"✅ File cookies ditemukan di: {path_obj}")
+            logging.debug(f"✅ File cookies ditemukan di: {path_obj}")
             return path_obj
 
         supported_browsers = ["chrome", "firefox", "edge", "opera", "brave"]
@@ -45,7 +48,9 @@ class DownloaderSetup:
                 logging.error(f"❌ Gagal mengambil cookies dari {browser}: {e}")
                 continue
         
-    def _get_info(self) -> Optional[Dict[str, Any]]:
+        return None
+        
+    def get_info(self) -> Optional[Dict[str, Any]]:
         """
         Mengambil metadata.
         """
@@ -53,11 +58,12 @@ class DownloaderSetup:
             return self.video_info
 
         opts : Any = {
-            'quiet': False,
-            'no_warnings': False,
+            'quiet': True,
+            'no_warnings': True,
             'skip_download': True,
             'cookiefile': self.cookies_path,
-            'logger': logging.getLogger(__name__),
+            'socket_timeout': 30,
+            'retries': 10,
         }
 
         try:
@@ -73,39 +79,25 @@ class DownloaderSetup:
             return None
 
     def get_folder_name(self) -> str:
-        info = self._get_info()
+        info = self.get_info()
         if not info: return "Unknown_Folder"
         
         channel = info.get('uploader', 'UnknownChannel')
         title = info.get('title', 'UnknownTitle')
         video_id = info.get('id', 'UnknownID')
         
-        raw_name = f"[{channel}] [{title}] [{video_id}]"
-        return "".join([c for c in raw_name if c.isalnum() or c in (' ', '-', '_', '[', ']')]).strip()
-
-    def get_info(self) -> Optional[Dict[str, Any]]:
-        return self._get_info()
-    
-    
-
-class Downloader:
-    def __init__(self, url: str, output_dir: Any, cookies_path: Optional[str] = None, download_progress_hook: Optional[Any] = None, postprocessor_hooks: Optional[Any]= None,
-        video_info: Optional[Dict[str, Any]] = None,ffmpeg_path: Optional[str] = None, ffmpeg_vd_args: Optional[List[str]] = None):
+        # Batasi panjang channel dan title agar folder tidak terlalu panjang
+        if len(channel) > 20: channel = channel[:20]
+        if len(title) > 30: title = title[:30]
         
-        self.url = url
-        self.cookies_path = cookies_path
-        self.output_dir = Path(output_dir)
-        self.video_info = video_info
-        self.progress_hook = download_progress_hook
-        self.postprocessor_hooks = postprocessor_hooks
-        self.ffmpeg_path = ffmpeg_path 
-        self.ffmpeg_args = ffmpeg_vd_args
+        raw_name = f"{channel}-{title}[{video_id}]"
+        return "".join([c for c in raw_name if c.isalnum() or c in (' ', '-', '_', '[', ']')]).strip()
 
     def _parse_subtitle_json(self, target_url: str) -> Optional[str]:
         """Helper untuk mengunduh dan memparsing JSON3 subtitle."""
         try:
             req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(req, timeout=30) as response:
                 data = json.loads(response.read().decode())
             
             full_text : list[str] = []
@@ -161,15 +153,13 @@ class Downloader:
             if target_url: break
 
         if target_url:
-            logging.info("♻️ Menggunakan metadata cache untuk transkrip.")
+            logging.debug("♻️ Menggunakan metadata cache untuk transkrip.")
             return self._parse_subtitle_json(target_url)
             
         return None
 
-    def download_transcript(self) -> Optional[Path]:
-        """Membuat file transkrip dari video."""
-        transcript_path = Path(self.output_dir) / "transcript.txt"
-        
+    def download_transcript(self) -> Optional[str]:
+        """Mengunduh teks transkrip dari video (mengembalikan string)."""
         # 1. Coba ambil dari cache info jika ada
         transcript_text = None
         if self.video_info:
@@ -178,15 +168,16 @@ class Downloader:
         # 2. Jika tidak ada di cache, lakukan request baru (Fallback)
         if not transcript_text:
             opts: Any = {
-                'quiet': False,
-                'no_warnings': False,
+                'quiet': True,
+                'no_warnings': True,
                 'skip_download': True,
                 'cookiefile': self.cookies_path,
                 'writesubtitles': True,
                 'writeautomaticsub': True,
                 'subtitleslangs': ['id', 'en', '.*'],
                 'subtitlesformat': 'json3',
-                'logger': logging.getLogger(__name__),
+                'socket_timeout': 30,
+                'retries': 10,
             }
             
             info = None
@@ -207,146 +198,114 @@ class Downloader:
                 else:
                     logging.warning("Transkrip tidak ditemukan via yt-dlp request.")
 
-        if transcript_text:
-            with open(transcript_path, "w", encoding="utf-8") as f:
-                f.write(transcript_text)
-            logging.info(f"Transkrip disimpan di: {transcript_path}")
-            return transcript_path
-        return None
+        return transcript_text
+    
+    def download_raw_audio(self, output_dir: Path) -> Optional[Path]:
+        """
+        Mengunduh audio mentah (tanpa konversi).
+        Returns: Path file yang diunduh (misal .webm atau .m4a)
+        """
 
-    def download_raw_audio(self) -> Optional[Path]:
-        """
-        Mengunduh audio dan langsung mengkonversinya ke MP3 menggunakan postprocessor.
-        """
-        # Pattern untuk file raw
-        output_filename = "audio_raw"
-        
+        # 1. Konfigurasi Dasar
+        outtmpl = str(output_dir / "raw_audio.%(ext)s")
+        cookies_path = self.cookies_path if self.cookies_path else None
         opts: Any = {
             'format': 'bestaudio/best',
-            'outtmpl': f"{output_filename}.%(ext)s",
-            'paths': {'home': str(self.output_dir)},
-            'cookiefile': self.cookies_path,
-            'quiet': False,       # Izinkan output log (agar terlihat saat FFmpeg bekerja)
-            'noprogress': True,   # Matikan bar bawaan yt-dlp (gunakan punya kita saja)
+            'outtmpl': outtmpl,
+            'cookiefile': cookies_path,
+            'quiet': True,
             'no_warnings': True,
-            'logger': logging.getLogger(__name__),
-            'ffmpeg_location': self.ffmpeg_path,
-            'progress_hooks': [self.progress_hook] if self.progress_hook else [],
-            'postprocessor_hooks': [self.postprocessor_hooks] if self.postprocessor_hooks else [],
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
+            'no_progress': True,
+            'progress_hooks': [self.download_progress_hook] if self.download_progress_hook else [],
+            'socket_timeout': 30,
+            'retries': 10,
+            'fragment_retries': 10,
+            'windowsfilenames': True,
+            'concurrent_fragment_downloads': 4,
+            'http_chunk_size': 10485760, # 10MB
+            'console_title': False,
         }
 
-        logging.info("⏳ Memulai download & konversi audio...")
+        logging.info("⏳ Mengunduh audio mentah...")
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([self.url])
-            
-            # Karena kita force mp3, file hasil pasti berakhiran .mp3
-            expected_path = self.output_dir / f"{output_filename}.mp3"
-            
-            if expected_path.exists():
-                logging.info(f"✅ Audio berhasil diunduh: {expected_path.name}")
-                return expected_path
+                # download=True mengembalikan list dict info jika berhasil
+                info = ydl.extract_info(self.url, download=True)
+                
+                if 'requested_downloads' in info:
+                    filepath = info['requested_downloads'][0]['filepath']
+                    return Path(filepath)
+                
+                # Fallback jika struktur info berbeda
+                return Path(ydl.prepare_filename(info))
                 
         except Exception as e:
             logging.error(f"❌ Gagal download audio: {e}")
         
         return None
 
-    def download_clips(self, clips_data: List[Dict[str, Any]]) -> List[Path]:
+
+    def download_single_clip(self, task: Dict[str, Any]) -> Optional[Path]:
         """
-        Mengunduh potongan klip spesifik berdasarkan data (biasanya dari summary.json).
-        Menggunakan fitur download_ranges yt-dlp untuk efisiensi bandwidth (Batch Download).
+        Mengunduh satu potongan klip spesifik menggunakan fitur download_ranges yt-dlp.
+
+        Args:
+            task: Dictionary yang berisi 'clip_info' dan 'output_path'.
+
+        Returns:
+            Path ke file yang dibuat jika berhasil, jika tidak None.
+
         """
-
-        if not clips_data:
-            logging.warning("⚠️ Tidak ada data klip untuk diunduh.")
-            return []
         
-        clips_dir = self.output_dir / "clips"
-        clips_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Gunakan folder temp untuk memastikan kita menangkap file yang benar
-        temp_dl_dir = clips_dir / "temp_dl"
-        if temp_dl_dir.exists():
-            shutil.rmtree(temp_dl_dir)
-        temp_dl_dir.mkdir(parents=True, exist_ok=True)
+        clip = task['clip_info']
+        filepath = task['output_path']
+        start = clip['start_time']
+        end = clip['end_time']
+        title = clip['title']
 
-        # 1. Kumpulkan semua range waktu
-        ranges: List[Dict[str, float]] = []
-        for c in clips_data:
-            # Dukung berbagai format key (start_time dari JSON atau start umum)
-            start = c.get('start_time')
-            if start is None:
-                start = c.get('start')
-            
-            end = c.get('end_time')
-            if end is None:
-                end = c.get('end')
+        cookies_path = self.cookies_path if self.cookies_path else None
 
-            if start is not None and end is not None:
-                ranges.append({'start_time': float(start), 'end_time': float(end)})
+        filepath.parent.mkdir(parents=True, exist_ok=True)
 
-        if not ranges:
-            logging.warning("⚠️ Tidak ada timestamp valid dalam daftar klip.")
-            return []
-
-        logging.info(f"✂️ Mengunduh {len(ranges)} klip secara batch...")
-
-        # 2. Konfigurasi yt-dlp dengan download_ranges
-        # Argumen FFmpeg diambil dari self.ffmpeg_args yang disuntikkan dari engine
-        if not self.ffmpeg_args:
-            logging.error("❌ FFmpeg args tidak ditemukan. Proses download klip dibatalkan.")
-            return []
-
-        def download_ranges_callback(info: Dict[str, Any], ydl: Any) -> List[Dict[str, float]]:
-            return ranges
-
-        opts: Any = {
-            'format': 'bestvideo[height<=1080]+bestaudio/best[height<=1080]/best',
-            'paths': {'home': str(temp_dl_dir)},
-            'outtmpl': "clip_%(section_start)s-%(section_end)s.%(ext)s",
-            'download_ranges': download_ranges_callback,
+        opts: Any =  {
+            # 1. Konfigurasi Dasar
+            'format': 'bestvideo+bestaudio/best',
+            'outtmpl': str(filepath),
+            'download_ranges': download_range_func([title], [(start, end)]),
             'force_keyframes_at_cuts': True,
-            'cookiefile': self.cookies_path,
-            'quiet': False,       # Izinkan output log
-            'noprogress': True,   # Matikan bar bawaan yt-dlp
+            'quiet': True,
             'no_warnings': True,
-            'logger': logging.getLogger(__name__),
-            'ffmpeg_location': self.ffmpeg_path,
-            'progress_hooks': [self.progress_hook] if self.progress_hook else [],
-            'postprocessor_hooks': [self.postprocessor_hooks] if self.postprocessor_hooks else [],
-            'postprocessors': [{
-                'key': 'FFmpegVideoConvertor',
-                'preferedformat': 'mkv',
-            }],
-            'postprocessor_args': {
-                'FFmpegVideoConvertor': self.ffmpeg_args,
-            },
-        }
+            'verbose': False,
+            'cookiefile': cookies_path,
+            'progress_hooks': [self.download_progress_hook] if self.download_progress_hook else [],
+            'socket_timeout': 30,
+            'retries': 10,
+            'fragment_retries': 10,
+            'windowsfilenames': True,
+            'concurrent_fragment_downloads': 4,
+            'http_chunk_size': 10485760, # 10MB
 
-        downloaded_files: List[Path] = []
+        }
+        
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.download([self.url])
-            
-            # 3. Pindahkan file dari temp ke folder tujuan
-            for f in temp_dl_dir.iterdir():
-                if f.is_file() and f.suffix in ['.mp4', '.mkv', '.webm']:
-                    dst_path = clips_dir / f.name
-                    # Overwrite jika ada
-                    shutil.move(str(f), str(dst_path))
-                    downloaded_files.append(dst_path)
-                    logging.info(f"✅ Berhasil: {dst_path.name}")
-            
-            # Bersihkan temp
-            shutil.rmtree(temp_dl_dir, ignore_errors=True)
-            
-        except Exception as e:
-            logging.error(f"❌ Gagal melakukan batch download clips: {e}")
+                # Gunakan extract_info(download=True) untuk mendapatkan path file final
+                info = ydl.extract_info(self.url, download=True)
+                
+                downloaded_path_str = None
+                if 'requested_downloads' in info and info.get('requested_downloads'):
+                    downloaded_path_str = info['requested_downloads'][0]['filepath']
+                else:
+                    # Fallback jika 'requested_downloads' tidak ada
+                    downloaded_path_str = ydl.prepare_filename(info)
 
-        return downloaded_files
+                if downloaded_path_str:
+                    downloaded_path = Path(downloaded_path_str)
+                    if downloaded_path.exists() and downloaded_path.stat().st_size > 100:
+                        logging.info(f"   ✅ Selesai disimpan: {downloaded_path.name}")
+                        return downloaded_path
+        except Exception as e:
+                logging.error(f"   ❌ Gagal mengunduh '{title}': {e}")
+        
+        logging.warning(f"   ⚠️ File unduhan tidak ditemukan atau kosong untuk klip '{title}'.")
+        return None

@@ -1,4 +1,4 @@
-Role: Content Strategist. Analyze audio & transcript for viral clips (30-90s) with high vocal energy/emotion.
+Role: Content Strategist. Analyze audio & transcript for viral clips with high vocal energy/emotion.
 
 Requirements:
 1. Timestamps: Float seconds (aligned with transcript).

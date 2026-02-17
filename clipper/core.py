@@ -8,7 +8,6 @@ import shutil
 import tarfile
 import stat
 import subprocess
-import platform
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -49,9 +48,9 @@ class ProjectCore:
         self.paths = self._setup_paths()        
         self._setup_logging()
         self._create_folder_structure()
-        self._inject_path()
+        self._register_bin_to_path()
         
-        logging.info("🚀 ProjectCore: Infrastruktur siap digunakan.")
+        logging.debug("🚀 ProjectCore: Infrastruktur siap digunakan.")
 
     def _get_base_path(self) -> Path:
         """Menentukan root directory project berdasarkan environment."""
@@ -106,18 +105,18 @@ class ProjectCore:
         """Membuat folder fisik berdasarkan konfigurasi path."""
         for p_name, p_path in self.paths._dirs_map.items():
             if not p_path.exists():
-                logging.info(f"📁 Folder {p_name} dibuat.")
+                logging.debug(f"📁 Folder {p_name} dibuat.")
                 p_path.mkdir(parents=True, exist_ok=True)
 
-    def _inject_path(self):
-        """Menyuntikkan folder bin ke PATH sementara agar subprocess bisa memanggil ffmpeg."""
-        bin_dir = str(self.paths.BIN_DIR)
-        if bin_dir not in os.environ['PATH']:
-            os.environ['PATH'] = bin_dir + os.pathsep + os.environ['PATH']
-            logging.info(f"💉 Path Injection: {self.paths.BIN_DIR.name} ditambahkan ke PATH.")
+    def _register_bin_to_path(self):
+        """Menambahkan folder bin lokal ke PATH environment sementara."""
+        bin_dir = str(self.paths.BIN_DIR.resolve())
+        if bin_dir not in os.environ["PATH"]:
+            os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
+            logging.debug(f"🔗 Menambahkan {bin_dir} ke System PATH.")
 
     def _setup_logging(self):
-        """Mengaktifkan logging ke file debug.log (INFO+). Console (Hanya ERROR)."""
+        """Mengaktifkan logging ke file debug.log dan konsol (INFO+)."""
         # 1. Pastikan folder log ada
         self.paths.LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
 
@@ -126,20 +125,26 @@ class ProjectCore:
         if logger.hasHandlers():
             logger.handlers.clear()
             
-        logger.setLevel(logging.INFO)
+        # Ubah ke DEBUG agar Root Logger mengizinkan semua pesan lewat ke Handler
+        logger.setLevel(logging.DEBUG)
 
         # 3. File Handler: Catat SEMUA (Info, Warning, Error) ke file
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
-        file_handler = logging.FileHandler(self.paths.LOG_FILE, encoding='utf-8')
-        file_handler.setLevel(logging.INFO)
+        file_handler = logging.FileHandler(self.paths.LOG_FILE, mode='w', encoding='utf-8')
+        file_handler.setLevel(logging.DEBUG)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
-        # 4. Console Handler: Tampilkan HANYA ERROR ke layar (agar bersih)
-        console_handler = logging.StreamHandler(sys.stderr)
-        console_handler.setLevel(logging.ERROR)
-        console_handler.setFormatter(logging.Formatter('❌ [LOG] %(message)s'))
+        # 4. Console Handler: Tampilkan INFO+ ke layar (UI Utama)
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(logging.INFO)
+        console_handler.setFormatter(logging.Formatter('%(message)s'))
         logger.addHandler(console_handler)
+
+        # 5. Bungkam Log Library Eksternal yang Berisik (HTTP Requests, dll)
+        for lib in ['urllib3', 'google','google_genai.models', 'httpx', 'httpcore', 'requests','yt-dlp']:
+            logging.getLogger(lib).setLevel(logging.DEBUG)
+
 
     def verify_assets(self):
         """Memastikan semua aset eksternal (model) tersedia."""
@@ -180,45 +185,52 @@ class ProjectCore:
                     logging.error(f"❌ Gagal menginstall static-ffmpeg: {e}")
 
             # 2. Install Deno via Shell Script (Official)
-            if not self.find_executable("deno"):
-                logging.info("📥 Deno tidak ditemukan. Menginstall via script official (curl | sh)...")
-                try:
-                    subprocess.run("curl -fsSL https://deno.land/install.sh | sh", shell=True, check=True)
-                    
-                    # Lokasi default installasi Deno (~/.deno/bin/deno)
-                    deno_home_bin = Path.home() / ".deno" / "bin" / "deno"
-                    target_link = self.paths.BASE_DIR / "deno"
-
-                    if deno_home_bin.exists():
-                        if not target_link.exists():
-                            # Buat symlink/copy ke root project agar find_executable menemukannya
-                            try:
-                                os.symlink(deno_home_bin, target_link)
-                            except OSError:
-                                shutil.copy2(deno_home_bin, target_link)
-                            
-                            st = os.stat(target_link)
-                            os.chmod(target_link, st.st_mode | stat.S_IEXEC)
-                        logging.info(f"✅ Deno berhasil diinstall dan dilink ke: {target_link}")
-                    else:
-                        logging.warning("⚠️ Deno terinstall tapi tidak ditemukan di ~/.deno/bin")
-                except Exception as e:
-                    logging.error(f"❌ Gagal menginstall Deno via script: {e}")
+            self._install_deno()
 
         # 2. Dependensi Lain (Deno, atau FFmpeg Windows)
         if sys_platform in self.DEPENDENCIES:
             for dep in self.DEPENDENCIES[sys_platform]:
                 # Copy agar tidak mengubah atribut class secara permanen
                 current_dep = dep.copy()
-                
-                # Dukungan Arsitektur ARM64 (Apple Silicon / Linux ARM) untuk Deno
-                if current_dep["name"] == "Deno" and platform.machine().lower() in ["arm64", "aarch64"]:
-                    if sys_platform == "darwin":
-                        current_dep["url"] = "https://github.com/denoland/deno/releases/latest/download/deno-aarch64-apple-darwin.zip"
-                    elif sys_platform == "linux":
-                        current_dep["url"] = "https://github.com/denoland/deno/releases/latest/download/deno-aarch64-unknown-linux-gnu.zip"
 
                 self._download_and_setup_tool(current_dep)
+
+    def _install_deno(self):
+        """Instalasi Deno via shell script."""
+        if sys.platform in ["linux", "darwin"]:
+            # 2. Install Deno via Shell Script (Official)
+            deno_installed = self.find_executable("deno")
+
+            if not deno_installed:
+                logging.info("📥 Deno tidak ditemukan. Menginstall via script official (curl | sh)...")
+                try:
+                    subprocess.run("curl -fsSL https://deno.land/install.sh | sh", shell=True, check=True, capture_output=True)
+
+                    # Lokasi default installasi Deno (~/.deno/bin/deno)
+                    deno_home_bin = Path.home() / ".deno" / "bin" / "deno"
+                    target_link = self.paths.BASE_DIR / "deno"
+
+                    if deno_home_bin.exists():
+                        self._create_symlink_or_copy(deno_home_bin, target_link)
+                    else:
+                        logging.warning("⚠️ Deno terinstall tapi tidak ditemukan di ~/.deno/bin")
+                except Exception as e:
+                    logging.error(f"❌ Gagal menginstall Deno via script: {e}")
+
+    def _create_symlink_or_copy(self, deno_home_bin: Path, target_link: Path):
+        """Membuat symlink atau menyalin file, lalu mengatur permission execute."""
+        
+        if not target_link.exists():
+            # Buat symlink/copy ke root project agar find_executable menemukannya
+            try:
+                os.symlink(deno_home_bin, target_link)
+            except OSError:
+                shutil.copy2(deno_home_bin, target_link)
+            
+            st = os.stat(target_link)
+            os.chmod(target_link, st.st_mode | stat.S_IEXEC)
+            logging.info(f"✅ Deno berhasil di-link ke: {target_link}")
+        return target_link
 
     def _extract_archive(self, data: bytes, url: str, archive_path_suffix: str, target_path: Path):
         """Mengekstrak file spesifik dari arsip ZIP atau TAR."""
@@ -248,7 +260,7 @@ class ProjectCore:
             found_path = self.find_executable(str(dep_info["target_filename"]))
             
             if found_path:
-                logging.info(f"✅ Dependensi '{dep_info['name']}' ditemukan: {found_path}")
+                logging.debug(f"✅ Dependensi '{dep_info['name']}' ditemukan: {found_path}")
                 return
 
             logging.warning(f"📥 Dependensi '{dep_info['name']}' tidak ditemukan. Memulai unduhan...")
@@ -267,10 +279,10 @@ class ProjectCore:
                 st = os.stat(target_path)
                 os.chmod(target_path, st.st_mode | stat.S_IEXEC)
 
-            print(f"   ✅ '{dep_info['name']}' berhasil di-setup di: {target_path.name}")
+            logging.info(f"✅ '{dep_info['name']}' berhasil di-setup di: {target_path.name}")
         except Exception as e:
             logging.error(f"❌ Gagal mengunduh/mengekstrak '{dep_info['name']}': {e}")
-            print(f"   ❌ Gagal setup '{dep_info['name']}'. Harap install manual jika terjadi error.")
+            logging.warning(f"⚠️ Gagal setup '{dep_info['name']}'. Harap install manual jika terjadi error.")
 
     @staticmethod
     def find_executable(name: str) -> Any: # Menggunakan Any atau Optional[str]

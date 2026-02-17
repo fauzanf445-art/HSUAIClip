@@ -1,18 +1,16 @@
-from clipper import run_project, ConsoleUI, SetupEngine
+from clipper import run_project, ConsoleUI
 
 def main():
     ConsoleUI.print_banner()
 
     try:
-        setup = SetupEngine()
-        setup.run_system_check()
-
         url = ConsoleUI.get_user_url()
         if not url: return
         
-        result_dir = run_project(url)
+        summary_dir, created_clips = run_project(url)
         
-        ConsoleUI.show_completion(result_dir)
+        ConsoleUI.show_summary_completion(summary_dir)
+        ConsoleUI.show_clips_completion(created_clips)
 
     except KeyboardInterrupt:
         print("\n👋 Dibatalkan pengguna.")

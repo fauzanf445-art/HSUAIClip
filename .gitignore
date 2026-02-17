@@ -9,6 +9,7 @@ __pycache__/
 .env
 
 # Folder Output & Log Aplikasi
+Test/
 Temp/
 *.log
 debug.log*
@@ -18,4 +19,5 @@ fonts/
 models/
 *.exe
 *.tflite
+
 
