@@ -142,8 +142,8 @@ class ProjectCore:
         logger.addHandler(console_handler)
 
         # 5. Bungkam Log Library Eksternal yang Berisik (HTTP Requests, dll)
-        for lib in ['urllib3', 'google','google_genai.models', 'httpx', 'httpcore', 'requests','yt-dlp']:
-            logging.getLogger(lib).setLevel(logging.DEBUG)
+        for lib in ['urllib3', 'google','google_genai.models', 'httpx', 'httpcore', 'requests']:
+            logging.getLogger(lib).setLevel(logging.WARNING)
 
 
     def verify_assets(self):

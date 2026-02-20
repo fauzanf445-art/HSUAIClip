@@ -38,7 +38,7 @@ class Summarizer:
             return match.group(1)
         return text.strip()
 
-    def generate_summary_from_multimodal_inputs(self, prompt_template: str, transcript_text: str, audio_file_path: Path) -> Dict[str, Any]:
+    def generate_summary(self, prompt_template: str, transcript_text: str, audio_file_path: Path) -> Dict[str, Any]:
         """
         Memproses prompt, transkrip, dan file audio untuk menghasilkan ringkasan.
         """

@@ -1,6 +1,7 @@
 import logging
 import json
 import os
+import subprocess
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -92,13 +93,12 @@ class CreateClipEngine:
 
         # --- DOWNLOAD LOGIC ---
         
-        cookie_path = self.cookies_path if self.cookies_path and self.cookies_path.exists() else None
-        
+        ffmpeg_args = UtilsProgress.get_clip_creation_args()
+
         yt_dlp_download = Downloader(
             self.url, 
-            cookies_path=cookie_path, 
+            cookies_path=self.cookies_path,
             video_info=self.video_info,
-            download_progress_hook=UtilsProgress.yt_dlp_progress_hook,
         )
         
         newly_created_files: List[Path] = []
@@ -111,39 +111,36 @@ class CreateClipEngine:
 
             logging.info(f"[{display_index}/{total_clips}] 🎬 Memproses: {title}")
 
-            # 1. Siapkan Path
-            final_output_path = task['output_path']
-            # Gunakan nama file sementara untuk raw download, tanpa ekstensi.
-            # yt-dlp akan menambahkan ekstensi yang sesuai (.mkv) secara otomatis.
-            raw_filename_base = f"raw_{final_output_path.stem}"
-            raw_output_path = final_output_path.parent / raw_filename_base
-            
-            # Override output path di task agar downloader menyimpan ke raw path
-            task['output_path'] = raw_output_path
+            # Mekanisme retry untuk menangani URL stream yang mungkin kadaluarsa (Error 403)
+            max_retries = 2  # 1 percobaan awal + 1 percobaan ulang
+            for attempt in range(max_retries):
+                try:
+                    # Ambil URL stream dari Downloader. Akan menggunakan cache jika ada.
+                    stream_urls = yt_dlp_download.get_stream_urls(title)
+                    
+                    runner = UtilsProgress()
+                    created_file = runner.create_clip_from_stream(stream_urls, task, ffmpeg_args)
+                    
+                    if created_file:
+                        newly_created_files.append(created_file)
+                    
+                    break  # Sukses, keluar dari loop retry
 
-            try:
-                # 2. Stage 1: Download Raw Clip (Stream Copy, sangat cepat)
-                # Progress bar download (internet) akan muncul dari downloader_progress_hook
-                downloaded_raw = yt_dlp_download.download_single_clip(task)
-                
-                if downloaded_raw and downloaded_raw.exists():
-                    # 3. Stage 2: Re-encode dengan FFmpeg (menampilkan progress bar)
-                    # Progress bar encoding (CPU/GPU) akan muncul dari utils.progress_hook
-                    try:
-                        runner = UtilsProgress()
-                        runner.process_dlp_clip(downloaded_raw, final_output_path)
-                        newly_created_files.append(final_output_path)
-                    except Exception as e:
-                        logging.error(f"❌ Gagal encoding klip: {e}")
-                    finally:
-                        # 4. Cleanup Raw File
-                        if downloaded_raw.exists():
-                            downloaded_raw.unlink()
-            except Exception as e:
-                logging.error(f"❌ Gagal memproses klip '{title}': {e}")
-            finally:
-                # Kembalikan path asli ke task (good practice)
-                task['output_path'] = final_output_path
+                except subprocess.CalledProcessError as e:
+                    # Cek apakah error disebabkan oleh URL kadaluarsa (403 Forbidden dari FFmpeg)
+                    if "403 Forbidden" in (e.stderr or "") and attempt < max_retries - 1:
+                        logging.warning(f"⚠️ URL stream mungkin kadaluarsa untuk '{title}'. Mencoba lagi dengan URL baru...")
+                        # Hapus cache info untuk memaksa yt-dlp mengambil ulang dari network
+                        yt_dlp_download.video_info = None
+                        continue  # Lanjutkan ke iterasi berikutnya dari loop retry
+                    else:
+                        # Error lain atau percobaan ulang sudah maksimal
+                        logging.error(f"❌ Gagal memproses klip '{title}': {e}")
+                        break  # Keluar dari loop retry, lanjut ke klip berikutnya
+                except Exception as e:
+                    # Menangani error non-subprocess yang tidak terduga
+                    logging.error(f"❌ Gagal memproses klip '{title}' dengan error tak terduga: {e}")
+                    break # Keluar dari loop retry
         
         mkv_files = sorted(existing_files + newly_created_files, key=lambda p: p.name)
         logging.info(f"✅ {len(newly_created_files)} klip baru berhasil dibuat. Total klip: {len(mkv_files)}.")
@@ -200,42 +197,44 @@ class SummarizeEngine:
 
     def _download_media(self, work_dir: Path, video_info: Optional[Dict[str, Any]] = None) -> tuple[Path, str]:
         """Tahap 1: Unduh audio dan buat transkrip."""
+        
         try:
             logging.debug("Tahap 1: Memulai proses download...")
-            cookie_path = self.paths.COOKIE_FILE if self.paths.COOKIE_FILE.exists() else None
             yt_dlp_download = Downloader(
                 self.url,
-                cookies_path=cookie_path,
+                cookies_path=self.paths.COOKIE_FILE,
                 video_info=video_info,
-                download_progress_hook=UtilsProgress.yt_dlp_progress_hook
             )
             
             # 1. Cek Cache Audio Final
             final_audio_path = work_dir / "audio_for_ai.mp3"
             if not (final_audio_path.exists() and final_audio_path.stat().st_size > 10240):
                 
-                # A. Download Raw Audio (Tanpa Konversi di Downloader)
-                raw_audio_path = yt_dlp_download.download_raw_audio(output_dir=work_dir)
+                # Ambil URL stream dan download via UtilsProgress
+                stream_urls = yt_dlp_download.get_stream_urls("Raw Audio Download")
                 
-                if not raw_audio_path or not raw_audio_path.exists():
-                    raise RuntimeError("Gagal mengunduh audio mentah.")
-                try:
-                    runner = UtilsProgress()
-                    runner.convert_to_mp3(raw_audio_path, final_audio_path)
-                finally:
-                    # Bersihkan file mentah
-                    if raw_audio_path.exists():
-                        raw_audio_path.unlink()
-                        logging.info(f"🧹 File audio mentah dibersihkan.")
+                logging.debug(f"✅ URL stream audio berhasil didapatkan: {stream_urls}")
+                runner = UtilsProgress()
+                duration = None
+                downloaded_path = runner.download_audio_from_stream(stream_urls, final_audio_path, duration=duration)
+                
+                if not downloaded_path or not downloaded_path.exists():
+                    raise RuntimeError("Gagal mengunduh dan meng-encode audio.")
 
             # 3. Download Transkrip (Dapatkan string, lalu engine yang simpan)
             transcript_text = yt_dlp_download.download_transcript() or ""
-            
-            if transcript_text:
-                transcript_path = work_dir / "transcript.txt"
-                transcript_path.write_text(transcript_text, encoding='utf-8')
-                logging.info(f"Transkrip disimpan di: {transcript_path}")
-
+            try:
+                if transcript_text:
+                    transcript_path = work_dir / "transcript.txt"
+                    transcript_path.write_text(transcript_text, encoding='utf-8')
+                    logging.info(f"Transkrip disimpan di: {transcript_path}")
+                else:
+                    logging.info("Tidak ada transkrip yang tersedia atau gagal diunduh.")
+            except Exception as e:
+                logging.error(f"Gagal menyimpan transkrip: {e}")
+                # It's important to continue even if saving the transcript fails
+                pass
+            logging.info("✅ Tahap 1: Download media selesai.")
             return final_audio_path, transcript_text
         except Exception as e:
             raise RuntimeError(f"Gagal pada tahap download media: {e}") from e
@@ -249,7 +248,7 @@ class SummarizeEngine:
                 raise ValueError("API Key belum dikonfigurasi.")
 
             summarizer = Summarizer(api_key=self.api_key)
-            result_data = summarizer.generate_summary_from_multimodal_inputs(
+            result_data = summarizer.generate_summary(
                 prompt_template=self.prompt_text,
                 transcript_text=transcript,
                 audio_file_path=audio_path
@@ -268,7 +267,7 @@ class SummarizeEngine:
         """
         Menjalankan alur kerja lengkap dengan penanganan error per tahap.
         """
-        ConsoleUI.show_progress("STEP 1 : Analize")
+        ConsoleUI.show_progress("STEP 1 : Analyze")
         
         # Jalankan persiapan awal (Prompt)
         self._prepare_and_validate()
@@ -315,9 +314,8 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
 
     # 3. Common Setup: Resolve Folder & Info (Diperlukan untuk Manual maupun Auto)
     Downloader.check_and_setup_cookies(core.paths.COOKIE_FILE)
-    cookie_path = core.paths.COOKIE_FILE if core.paths.COOKIE_FILE.exists() else None
     
-    downloader = Downloader(url, cookies_path=cookie_path)
+    downloader = Downloader(url, cookies_path=core.paths.COOKIE_FILE)
     folder_name = downloader.get_folder_name()
     video_info = downloader.get_info()
     
