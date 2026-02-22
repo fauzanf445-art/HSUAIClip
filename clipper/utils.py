@@ -55,13 +55,6 @@ class UtilsProgress:
         '-b:a', '192k'
     ]
 
-    # Argumen audio untuk konversi ke MP3 (untuk analisis AI)
-    MP3_AUDIO_ARGS = [
-        '-c:a', 'libmp3lame',
-        '-b:a', '128k',      # Bitrate yang seimbang untuk ucapan
-        '-ar', '16000',      # Sample rate standar untuk speech-to-text
-    ]
-
     # Konstanta untuk pemotongan klip
     CLIP_END_PADDING_SECONDS = 0.15
     SEEK_BUFFER_SECONDS = 5.0
@@ -221,49 +214,6 @@ class UtilsProgress:
         cmd = [arg for arg in cmd if arg not in ['-stats']]
         self._execute_with_stderr_parse(cmd, task_name, total_duration)
 
-    def download_audio_from_stream(self, stream_urls: Optional[tuple[Optional[str], Optional[str]]], output_path: Path, duration: Optional[float] = None) -> Optional[Path]:
-        """Mengunduh audio dari stream URL dan meng-encode ke MP3."""
-        if not stream_urls:
-            logging.error("❌ Gagal mendapatkan URL stream untuk audio.")
-            return None
-            
-        video_url, audio_url = stream_urls
-        target_url = audio_url if audio_url else video_url
-        
-        if not target_url:
-             logging.error("❌ URL stream kosong.")
-             return None
-
-        # Opsi 4: Optimasi Jaringan untuk koneksi yang lebih tangguh
-        network_args = [
-            '-reconnect', '1',
-            '-reconnect_streamed', '1',
-            '-reconnect_delay_max', '5'
-        ]
-
-        # Opsi 5: Multithreading untuk memaksimalkan penggunaan CPU
-        thread_args = ['-threads', '0']
-
-        cmd = [
-            'ffmpeg', '-y',
-            *network_args,
-            '-i', target_url,
-            *self.MP3_AUDIO_ARGS,
-            *thread_args,
-            '-vn', str(output_path)
-        ]
-        
-        try:
-            self.execute(cmd, "Download Audio", total_duration=None)
-            
-            if output_path.exists() and output_path.stat().st_size > 1024:
-                return output_path
-
-        except Exception as e:
-            logging.error(f"❌ Gagal download audio via FFmpeg: {e}")
-        
-        return None
-
     def create_clip_from_stream(self, stream_urls: Optional[tuple[Optional[str], Optional[str]]], task: Dict[str, Any], ffmpeg_args: List[str]) -> Optional[Path]:
         """Membuat klip video presisi dari stream URL menggunakan FFmpeg."""
         clip = task['clip_info']
@@ -304,3 +254,104 @@ class UtilsProgress:
         except Exception as e:
             logging.error(f"   ❌ Eksekusi FFmpeg gagal untuk klip '{title}': {e}")
             return None
+
+    def convert_audio_to_wav(self, input_path: Path, output_path: Path) -> Optional[Path]:
+        """Mengonversi file audio ke format WAV (16kHz, Mono) dengan progress bar."""
+        
+        # Argumen: PCM 16-bit, 16kHz, Mono (Standar untuk AI Speech Recognition)
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(input_path),
+            '-acodec', 'pcm_s16le',
+            '-ac', '1',
+            '-ar', '16000',
+            str(output_path)
+        ]
+        
+        try:
+            self.execute(cmd, "Konversi Audio")
+            
+            if output_path.exists() and output_path.stat().st_size > 1024:
+                return output_path
+        except Exception as e:
+            logging.error(f"❌ Gagal konversi audio: {e}")
+        
+        return None
+
+    def merge_video_audio(self, video_path: Path, audio_source: Path, output_path: Path) -> bool:
+        """Menggabungkan stream video (tanpa suara) dengan audio dari file sumber."""
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', str(video_path),
+            '-i', str(audio_source),
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-shortest',
+            str(output_path)
+        ]
+        try:
+            self.execute(cmd, "Muxing Audio")
+            return True
+        except Exception as e:
+            logging.error(f"Gagal menggabungkan audio: {e}")
+            return False
+
+    def apply_motion_crop(self, input_path: Path, audio_source_path: Path, output_path: Path, analysis_data: Dict[str, Any]) -> bool:
+        """
+        Menerapkan motion tracking crop ke video menggunakan FFmpeg dengan akselerasi hardware.
+        Menggunakan filter 'sendcmd' untuk mengubah koordinat crop secara dinamis.
+        """
+        crop_instructions = analysis_data.get("crop_data")
+        if not crop_instructions:
+            logging.error("Tidak ada data analisis crop yang ditemukan.")
+            return False
+
+        # Buat file perintah sementara untuk sendcmd
+        cmd_file_path = output_path.with_suffix('.txt')
+        try:
+            with open(cmd_file_path, 'w') as f:
+                # Inisialisasi nilai x dan y untuk menghindari nilai default 0 di awal
+                f.write(f"0.0 crop x {crop_instructions[0]['x']};\n")
+                f.write(f"0.0 crop y {crop_instructions[0]['y']};\n")
+                for item in crop_instructions:
+                    # Format: timestamp filter_name property new_value
+                    f.write(f"{item['timestamp']:.4f} crop x {item['x']};\n")
+                    f.write(f"{item['timestamp']:.4f} crop y {item['y']};\n")
+
+            target_w = analysis_data['target_w']
+            target_h = analysis_data['target_h']
+
+            encoder_args = self.get_clip_creation_args()
+            filter_str = f"[0:v]sendcmd=f='{cmd_file_path.as_posix()}',crop={target_w}:{target_h}:x=val(x):y=val(y)[v_out]"
+
+            cmd = [
+                'ffmpeg', '-y', '-nostats',
+                '-i', str(input_path),
+                '-i', str(audio_source_path),
+                '-filter_complex', filter_str,
+                '-map', '[v_out]',
+                '-map', '1:a:0',
+                '-shortest',
+                *encoder_args,
+                str(output_path)
+            ]
+
+            total_duration = None
+            try:
+                probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(input_path)]
+                duration_str = subprocess.check_output(probe_cmd).decode('utf-8').strip()
+                total_duration = float(duration_str)
+            except Exception as e:
+                logging.warning(f"Gagal mendapatkan durasi video untuk progress bar: {e}")
+
+            self.execute(cmd, f"Tracking: {output_path.name}", total_duration=total_duration)
+            return True
+        except Exception as e:
+            logging.error(f"Gagal menerapkan motion crop: {e}", exc_info=True)
+            return False
+        finally:
+            if cmd_file_path.exists():
+                try: cmd_file_path.unlink()
+                except Exception as e: logging.warning(f"Gagal menghapus file command sementara: {e}")

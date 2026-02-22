@@ -1,3 +1,6 @@
 yt-dlp
 google-genai
 python-dotenv
+mediapipe
+opencv-python
+numpy

@@ -8,6 +8,7 @@ from typing import Optional, Dict, Any, List
 from dotenv import load_dotenv, set_key
 from .modules.downloader import Downloader
 from .modules.summarizer import Summarizer
+from .modules.processor import FaceTrackerProcessor
 from .interface import ConsoleUI
 from .core import ProjectCore
 from .utils import UtilsProgress
@@ -147,6 +148,55 @@ class CreateClipEngine:
         
         return mkv_files
 
+class MotionTrackingEngine:
+    """
+    Engine untuk menerapkan efek Motion Tracking/Face Prediction pada klip.
+    """
+    def __init__(self, work_dir: Path, core: ProjectCore):
+        self.work_dir = work_dir
+        self.core = core
+        self.output_dir = work_dir / "processed_clips"
+        self.processor = FaceTrackerProcessor(str(self.core.paths.FACE_LANDMARKER_FILE))
+
+    def run_tracking_engine(self, input_clips: List[Path]) -> List[Path]:
+        if not input_clips:
+            logging.warning("Tidak ada klip input untuk tracking.")
+            return []
+
+        logging.info("Tahap 4: Menjalankan Motion Tracking & Prediction...")
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        
+        processed_files: List[Path] = []
+        
+        for idx, clip_path in enumerate(input_clips):
+            output_path = self.output_dir / f"tracked_{clip_path.name.replace('.mkv', '.mp4')}"
+            
+            logging.info(f"[{idx+1}/{len(input_clips)}] 👁️  Tracking wajah pada: {clip_path.name}")
+            
+            if output_path.exists():
+                 logging.warning(f"♻️ Cache ditemukan: {output_path.name}")
+                 processed_files.append(output_path)
+                 continue
+
+            # --- Alur Kerja Baru yang Dioptimalkan ---
+            # 1. Analisis video untuk mendapatkan data koordinat crop (cepat, hanya CPU)
+            analysis_data = self.processor.analyze_video_for_cropping(str(clip_path))
+
+            if analysis_data:
+                # 2. Terapkan crop menggunakan FFmpeg dengan akselerasi hardware (cepat, GPU)
+                #    Proses ini juga langsung menggabungkan audio dalam satu langkah.
+                runner = UtilsProgress()
+                # Sumber audio adalah klip input itu sendiri
+                if runner.apply_motion_crop(clip_path, clip_path, output_path, analysis_data):
+                    processed_files.append(output_path)
+                else:
+                    logging.error(f"Gagal menerapkan motion crop pada {clip_path.name}")
+            else:
+                logging.error(f"Gagal menganalisis video untuk motion tracking: {clip_path.name}")
+
+        return processed_files
+
+
 class SummarizeEngine:
     def __init__(self, url: str, core: ProjectCore):
         self.url = url
@@ -206,20 +256,33 @@ class SummarizeEngine:
                 video_info=video_info,
             )
             
-            # 1. Cek Cache Audio Final
-            final_audio_path = work_dir / "audio_for_ai.mp3"
+            # 1. Cek Cache Audio Final (WAV)
+            # Gunakan nama file yang konsisten dengan Downloader (get_folder_name + .mp3)
+            safe_name = yt_dlp_download.get_folder_name()
+            final_audio_path = work_dir / f"{safe_name}.wav"
+
             if not (final_audio_path.exists() and final_audio_path.stat().st_size > 10240):
+                # Download RAW Audio (Format asli dari YouTube)
+                raw_audio_path = yt_dlp_download.download_audio(work_dir)
                 
-                # Ambil URL stream dan download via UtilsProgress
-                stream_urls = yt_dlp_download.get_stream_urls("Raw Audio Download")
+                if not raw_audio_path or not raw_audio_path.exists():
+                    raise RuntimeError("Gagal mengunduh audio raw.")
                 
-                logging.debug(f"✅ URL stream audio berhasil didapatkan: {stream_urls}")
+                # Konversi ke WAV dengan Progress Bar
+                logging.info("🔄 Mengonversi audio ke WAV...")
                 runner = UtilsProgress()
-                duration = None
-                downloaded_path = runner.download_audio_from_stream(stream_urls, final_audio_path, duration=duration)
+                converted_path = runner.convert_audio_to_wav(raw_audio_path, final_audio_path)
                 
-                if not downloaded_path or not downloaded_path.exists():
-                    raise RuntimeError("Gagal mengunduh dan meng-encode audio.")
+                if not converted_path:
+                     raise RuntimeError("Gagal mengonversi audio ke WAV.")
+                
+                # Bersihkan file raw
+                try:
+                    raw_audio_path.unlink()
+                except Exception:
+                    pass
+
+                final_audio_path = converted_path
 
             # 3. Download Transkrip (Dapatkan string, lalu engine yang simpan)
             transcript_text = yt_dlp_download.download_transcript() or ""
@@ -343,5 +406,10 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
     # 4. Create Clip Engine: Potong video (Menerima data klip secara langsung)
     clips_engine = CreateClipEngine(url, work_dir=work_dir, core=core, video_info=video_info)
     createclips = clips_engine.run_clipsengine(clips_data)
+
+    # 5. Motion Tracking Engine: Proses efek visual
+    tracking_engine = MotionTrackingEngine(work_dir=work_dir, core=core)
+    final_clips = tracking_engine.run_tracking_engine(createclips)
     
-    return work_dir, createclips
+    # Return final processed clips instead of raw clips
+    return work_dir, final_clips

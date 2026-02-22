@@ -230,6 +230,8 @@ class Downloader:
                 opts['format'] = 'bestvideo+bestaudio/best'
                 with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
                     info_to_parse = cast(Dict[str, Any], ydl.extract_info(self.url, download=False))
+                    # Simpan info yang baru diambil ke cache instance untuk pemanggilan berikutnya
+                    self.video_info = info_to_parse
             except Exception as e:
                 logging.error(f"Gagal mengambil info stream untuk klip '{clip_title}': {e}")
                 return None
@@ -253,3 +255,42 @@ class Downloader:
 
         logging.error(f"Gagal menemukan URL stream yang valid di dalam metadata untuk '{clip_title}'.")
         return None
+
+    def download_audio(self, output_dir: Path) -> Optional[Path]:
+        """
+        Mengunduh track audio raw (best quality) tanpa konversi.
+        """
+        try:
+            if not output_dir.exists():
+                output_dir.mkdir(parents=True, exist_ok=True)
+
+            safe_name = self.get_folder_name()
+            out_tmpl = output_dir / f"{safe_name}.%(ext)s"
+
+            opts = self._get_base_opts()
+            opts.update({
+                'format': 'bestaudio/best',
+                'outtmpl': str(out_tmpl),
+            })
+
+            logging.info(f"🎵 Memulai unduhan audio raw: {safe_name}")
+            with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:
+                info = ydl.extract_info(self.url, download=True)
+                
+                if info and 'ext' in info:
+                    final_path = output_dir / f"{safe_name}.{info['ext']}"
+                    if final_path.exists():
+                        logging.info(f"✅ Audio raw tersimpan di: {final_path}")
+                        return final_path
+            
+            # Fallback: Cari file dengan nama safe_name.* (selain .part)
+            for file_path in output_dir.glob(f"{safe_name}.*"):
+                if file_path.suffix not in ['.part', '.ytdl']:
+                    return file_path
+            
+            logging.error(f"❌ Gagal menemukan file output audio raw.")
+            return None
+
+        except Exception as e:
+            logging.error(f"❌ Gagal mengunduh audio: {e}")
+            return None
