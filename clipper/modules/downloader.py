@@ -1,4 +1,5 @@
 import json
+from os import path
 import urllib.request
 import logging
 from pathlib import Path
@@ -60,11 +61,12 @@ class Downloader:
             'no_warnings': False,
             'socket_timeout': 30,
             'retries': 10,
+            'remote_components': ['ejs:npm', 'ejs:github'],
             
         }
 
         if self.deno_path:
-            opts['js_runtimes'] = [f"deno:{self.deno_path}"]
+            opts['js_runtimes'] = {'deno': {'path': self.deno_path}}
             logging.debug(f"🦕 Menggunakan Deno JS runtime: {self.deno_path}")
         
         if self.cookies_path:
