@@ -48,7 +48,7 @@ class FFmpegWrapper:
         # 1. Cek NVIDIA NVENC (Prioritas Utama)
         try:
             subprocess.run(
-                ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1', 
+                ['ffmpeg','-hwaccel', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1', 
                  '-c:v', 'h264_nvenc', '-f', 'null', '-'], 
                 check=True, capture_output=True
             )
@@ -251,19 +251,21 @@ class FFmpegWrapper:
 
         cmd_file_path = output_path.with_suffix('.txt')
         try:
+            # PERBAIKAN: Menggunakan target 'crop' (tanpa :name) agar kompatibel dengan FFmpeg Colab
             with open(cmd_file_path, 'w') as f:
                 for i in range(len(crop_instructions)):
                     curr = crop_instructions[i]
                     start = curr['timestamp']
                     end = crop_instructions[i+1]['timestamp'] if i < len(crop_instructions) - 1 else start + 10.0
-                    f.write(f"{start:.3f}-{end:.3f} mycrop x {int(curr['x'])};\n")
-                    f.write(f"{start:.3f}-{end:.3f} mycrop y {int(curr['y'])};\n")
-
+                    # 'crop' akan otomatis menargetkan filter crop pertama
+                    f.write(f"{start:.3f}-{end:.3f} crop x {int(curr['x'])};\n")
+                    f.write(f"{start:.3f}-{end:.3f} crop y {int(curr['y'])};\n")
+                    
             encoder_args = self.get_clip_creation_args()
             target_w, target_h = analysis_data['target_w'], analysis_data['target_h']
             escaped_cmd_path = cmd_file_path.resolve().as_posix().replace(':', '\\:')
             
-            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0:name=mycrop"
+            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0"
             if subtitle_path and subtitle_path.exists():
                 escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
                 filter_chain += f",ass='{escaped_sub_path}'"
