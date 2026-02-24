@@ -131,8 +131,7 @@ class FFmpegWrapper:
         logging.debug("🔄 Membuat argumen FFmpeg untuk klip...")
         video_args = FFmpegWrapper._get_video_encoder_args()
         
-        fps_args = ['-r', '30', 'cfr']
-        
+        fps_args = ['-r', '30','-vsync', '1']
         common_args = [
             '-avoid_negative_ts', 'make_zero',
             '-fflags', '+genpts+igndts',
