@@ -1,50 +1,19 @@
 import re
 import subprocess
 import logging
-import sys
 from typing import List, Optional, Deque, Dict, Any
 from pathlib import Path
 from collections import deque
-import time
 
-class UtilsProgress:
+from .models import Clip
+from .ui_progress import ConsoleProgressBar
+
+class FFmpegWrapper:
     """
     Wrapper class untuk menangani eksekusi FFmpeg dengan progress bar otomatis.
+    Menggantikan UtilsProgress lama.
     """
     
-    def _print_progress(self, percent: float, task_name: str, extra_info: str = ""):
-        # Optimization: Only update if percentage changed significantly or it's 100%
-        # And also, throttle updates to avoid flickering
-        current_time = time.time()
-        # Update if percentage changed by at least 1%, or if it's the first update, or if it's 100%,
-        # or if 0.1 seconds have passed since the last update.
-        if (percent - self._last_printed_percent < 1.0 and percent < 100 and
-            current_time - self._last_update_time < 0.1 and self._last_printed_percent != -1.0):
-            return
-
-        self._last_printed_percent = percent
-        self._last_update_time = current_time
-        """Menampilkan progress bar standar ke terminal."""
-        bar_length = 25
-        filled_length = int(bar_length * percent // 100)
-        bar = '█' * filled_length + '░' * (bar_length - filled_length)
-        
-        if len(extra_info) > 30:
-            extra_info = extra_info[:27] + "..."
-            
-        try:
-            sys.stdout.write(f"\r⏳ {task_name}: {bar} {int(percent)}% {extra_info}\033[K")
-            sys.stdout.flush()
-        
-        except UnicodeEncodeError:
-            # Fallback jika terminal tidak mendukung emoji (misal cmd.exe legacy)
-            sys.stdout.write(f"\r[Progress] {task_name}: {bar} {int(percent)}% {extra_info}\033[K")
-            sys.stdout.flush()
-
-    def __init__(self):
-        self._last_printed_percent = -1.0 # Initialize to a value that ensures first print
-        self._last_update_time = 0.0 # Initialize last update time
-
     TIME_PATTERN = re.compile(r'time=\s*(\d+):(\d{2}):(\d{2})\.(\d{2})') # Used for non-cutting tasks
     DURATION_PATTERN = re.compile(r'Duration: (\d+):(\d{2}):(\d{2})\.(\d{2})')
 
@@ -60,6 +29,16 @@ class UtilsProgress:
     SEEK_BUFFER_SECONDS = 5.0
 
     _cached_ffmpeg_clip_args: Optional[List[str]] = None
+
+    def __init__(self):
+        self.ui = ConsoleProgressBar()
+
+    def _print_progress(self, percent: float, task_name: str, extra_info: str = ""):
+        """
+        Proxy method untuk menjaga kompatibilitas dengan kode lama (engine.py)
+        yang memanggil _print_progress secara langsung.
+        """
+        self.ui.update(percent, task_name, extra_info)
 
     @staticmethod
     def _get_video_encoder_args() -> List[str]:
@@ -145,15 +124,14 @@ class UtilsProgress:
     def get_clip_creation_args() -> List[str]:
         """
         Mengembalikan konfigurasi lengkap FFmpeg untuk pembuatan klip video.
-        Menggabungkan argumen video (HW Accel), audio (AAC), dan argumen umum.
         """
-        if UtilsProgress._cached_ffmpeg_clip_args is not None:
-            return UtilsProgress._cached_ffmpeg_clip_args
+        if FFmpegWrapper._cached_ffmpeg_clip_args is not None:
+            return FFmpegWrapper._cached_ffmpeg_clip_args
         
         logging.debug("🔄 Membuat argumen FFmpeg untuk klip...")
-        video_args = UtilsProgress._get_video_encoder_args()
+        video_args = FFmpegWrapper._get_video_encoder_args()
         
-        fps_args = ['-r', '30', '-vsync', 'cfr']
+        fps_args = ['-r', '30', '-fps_mode', 'cfr']
         
         common_args = [
             '-avoid_negative_ts', 'make_zero',
@@ -162,15 +140,14 @@ class UtilsProgress:
             '-threads', '0'
         ]
         
-        # Gabungkan semua: FPS + Video Encoder + Audio Encoder + Argumen Umum
-        args = fps_args + video_args + UtilsProgress.AAC_AUDIO_ARGS + common_args
+        args = fps_args + video_args + FFmpegWrapper.AAC_AUDIO_ARGS + common_args
         
         logging.debug(f"✅ Argumen FFmpeg berhasil dibuat: {args}")
-        UtilsProgress._cached_ffmpeg_clip_args = args
+        FFmpegWrapper._cached_ffmpeg_clip_args = args
         return args
 
-    def _execute_with_stderr_parse(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None):
-        """Eksekusi FFmpeg dengan progress dari parsing stderr (untuk konversi/download)."""
+    def _execute_with_stderr_parse(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None, silent: bool = False):
+        """Eksekusi FFmpeg dengan progress dari parsing stderr."""
         try:
             process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, encoding='utf-8', errors='ignore')
             
@@ -195,7 +172,8 @@ class UtilsProgress:
                         logging.debug(f"FFmpeg Output Line: {line.strip()}")
                         current_time = h * 3600 + m * 60 + s + hs / 100
                         percent = min(100, (current_time / total_duration_from_ffmpeg) * 100) if total_duration_from_ffmpeg > 0 else 0
-                        self._print_progress(percent, task_name)
+                        if not silent:
+                            self.ui.update(percent, task_name)
             
             process.wait()
             if process.returncode != 0:
@@ -203,24 +181,21 @@ class UtilsProgress:
                 logging.error(f"FFmpeg Error during '{task_name}'. Details:\n{error_log}")
                 raise subprocess.CalledProcessError(process.returncode, cmd, stderr=error_log)
         finally:
-            sys.stdout.write("\n")
+            if not silent:
+                self.ui.finish()
 
-    def execute(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None):
-        """
-        Menjalankan perintah FFmpeg dan menampilkan progress bar.
-        Menggunakan parsing stderr untuk semua jenis tugas.
-        """
-        # Filter argumen stats agar tidak duplikat, karena kita menangani progress sendiri
+    def execute(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None, silent: bool = False):
+        """Menjalankan perintah FFmpeg dan menampilkan progress bar."""
         cmd = [arg for arg in cmd if arg not in ['-stats']]
-        self._execute_with_stderr_parse(cmd, task_name, total_duration)
+        self._execute_with_stderr_parse(cmd, task_name, total_duration, silent=silent)
 
-    def create_clip_from_stream(self, stream_urls: Optional[tuple[Optional[str], Optional[str]]], task: Dict[str, Any], ffmpeg_args: List[str]) -> Optional[Path]:
+    def create_clip_from_stream(self, stream_urls: Optional[tuple[Optional[str], Optional[str]]], task: Dict[str, Any], ffmpeg_args: List[str], silent: bool = False) -> Optional[Path]:
         """Membuat klip video presisi dari stream URL menggunakan FFmpeg."""
-        clip = task['clip_info']
+        clip: Clip = task['clip_info']
         output_path = task['output_path']
-        start = float(clip['start_time'])
-        end = float(clip['end_time'])
-        title = clip['title']
+        start = clip.start_time
+        end = clip.end_time
+        title = clip.title
         duration = (end - start) + self.CLIP_END_PADDING_SECONDS
 
         if not stream_urls or not stream_urls[0]:
@@ -249,109 +224,72 @@ class UtilsProgress:
         cmd.extend([*(ffmpeg_args or []), '-y', str(output_path)])
 
         try:
-            self.execute(cmd, f"Memotong Klip: {output_path.name}", total_duration=duration)
+            self.execute(cmd, f"Memotong Klip: {output_path.name}", total_duration=duration, silent=silent)
             return output_path if output_path.exists() and output_path.stat().st_size > 1024 else None
         except Exception as e:
             logging.error(f"   ❌ Eksekusi FFmpeg gagal untuk klip '{title}': {e}")
             return None
 
     def convert_audio_to_wav(self, input_path: Path, output_path: Path) -> Optional[Path]:
-        """Mengonversi file audio ke format WAV (16kHz, Mono) dengan progress bar."""
-        
-        # Argumen: PCM 16-bit, 16kHz, Mono (Standar untuk AI Speech Recognition)
+        """Mengonversi file audio ke format WAV (16kHz, Mono)."""
         cmd = [
             'ffmpeg', '-y',
             '-i', str(input_path),
-            '-acodec', 'pcm_s16le',
-            '-ac', '1',
-            '-ar', '16000',
+            '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000',
             str(output_path)
         ]
-        
         try:
             self.execute(cmd, "Konversi Audio")
-            
-            if output_path.exists() and output_path.stat().st_size > 1024:
-                return output_path
+            if output_path.exists() and output_path.stat().st_size > 1024: return output_path
         except Exception as e:
             logging.error(f"❌ Gagal konversi audio: {e}")
-        
         return None
 
-    def merge_video_audio(self, video_path: Path, audio_source: Path, output_path: Path) -> bool:
-        """Menggabungkan stream video (tanpa suara) dengan audio dari file sumber."""
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', str(video_path),
-            '-i', str(audio_source),
-            '-c:v', 'copy',
-            '-c:a', 'aac',
-            '-map', '0:v:0',
-            '-map', '1:a:0',
-            '-shortest',
-            str(output_path)
-        ]
-        try:
-            self.execute(cmd, "Muxing Audio")
-            return True
-        except Exception as e:
-            logging.error(f"Gagal menggabungkan audio: {e}")
-            return False
-
-    def apply_motion_crop(self, input_path: Path, audio_source_path: Path, output_path: Path, analysis_data: Dict[str, Any]) -> bool:
-        """
-        Menerapkan motion tracking crop ke video menggunakan FFmpeg dengan akselerasi hardware.
-        Menggunakan filter 'sendcmd' untuk mengubah koordinat crop secara dinamis.
-        """
+    def render_with_effects(self, video_path: Path, subtitle_path: Optional[Path], analysis_data: Dict[str, Any], output_path: Path) -> bool:
+        """Merender video final dengan crop dinamis dan subtitle."""
         crop_instructions = analysis_data.get("crop_data")
-        if not crop_instructions:
-            logging.error("Tidak ada data analisis crop yang ditemukan.")
-            return False
+        if not crop_instructions: return False
 
-        # Buat file perintah sementara untuk sendcmd
         cmd_file_path = output_path.with_suffix('.txt')
         try:
             with open(cmd_file_path, 'w') as f:
-                # Inisialisasi nilai x dan y untuk menghindari nilai default 0 di awal
-                f.write(f"0.0 crop x {crop_instructions[0]['x']};\n")
-                f.write(f"0.0 crop y {crop_instructions[0]['y']};\n")
-                for item in crop_instructions:
-                    # Format: timestamp filter_name property new_value
-                    f.write(f"{item['timestamp']:.4f} crop x {item['x']};\n")
-                    f.write(f"{item['timestamp']:.4f} crop y {item['y']};\n")
-
-            target_w = analysis_data['target_w']
-            target_h = analysis_data['target_h']
+                for i in range(len(crop_instructions)):
+                    curr = crop_instructions[i]
+                    start = curr['timestamp']
+                    end = crop_instructions[i+1]['timestamp'] if i < len(crop_instructions) - 1 else start + 10.0
+                    f.write(f"{start:.3f}-{end:.3f} cropfilter x {int(curr['x'])};\n")
+                    f.write(f"{start:.3f}-{end:.3f} cropfilter y {int(curr['y'])};\n")
 
             encoder_args = self.get_clip_creation_args()
-            filter_str = f"[0:v]sendcmd=f='{cmd_file_path.as_posix()}',crop={target_w}:{target_h}:x=val(x):y=val(y)[v_out]"
+            target_w, target_h = analysis_data['target_w'], analysis_data['target_h']
+            escaped_cmd_path = cmd_file_path.resolve().as_posix().replace(':', '\\:')
+            
+            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0@cropfilter"
+            if subtitle_path and subtitle_path.exists():
+                escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
+                filter_chain += f",ass='{escaped_sub_path}'"
+            filter_chain += "[v_out]"
 
             cmd = [
                 'ffmpeg', '-y', '-nostats',
-                '-i', str(input_path),
-                '-i', str(audio_source_path),
-                '-filter_complex', filter_str,
-                '-map', '[v_out]',
-                '-map', '1:a:0',
-                '-shortest',
-                *encoder_args,
-                str(output_path)
+                '-i', str(video_path),
+                '-filter_complex', filter_chain,
+                '-map', '[v_out]', '-map', '0:a:0',
+                '-shortest', *encoder_args, str(output_path)
             ]
 
             total_duration = None
             try:
-                probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(input_path)]
-                duration_str = subprocess.check_output(probe_cmd).decode('utf-8').strip()
-                total_duration = float(duration_str)
-            except Exception as e:
-                logging.warning(f"Gagal mendapatkan durasi video untuk progress bar: {e}")
+                probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(video_path)]
+                total_duration = float(subprocess.check_output(probe_cmd).decode('utf-8').strip())
+            except Exception: pass
 
-            self.execute(cmd, f"Tracking: {output_path.name}", total_duration=total_duration)
+            self.execute(cmd, f"Rendering: {output_path.name}", total_duration=total_duration)
             return True
         except Exception as e:
-            logging.error(f"Gagal menerapkan motion crop: {e}", exc_info=True)
+            logging.error(f"Gagal merender video: {e}", exc_info=True)
             return False
         finally:
             if cmd_file_path.exists():
                 try: cmd_file_path.unlink()
-                except Exception as e: logging.warning(f"Gagal menghapus file command sementara: {e}")
+                except Exception: pass

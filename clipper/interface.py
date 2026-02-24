@@ -1,6 +1,8 @@
 import logging
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
+
+from .utils.models import Clip
 
 class ConsoleUI:
     """Menangani interaksi antarmuka pengguna berbasis konsol."""
@@ -47,7 +49,7 @@ class ConsoleUI:
         return url
 
     @staticmethod
-    def get_manual_timestamps() -> Optional[List[Dict[str, Any]]]:
+    def get_manual_timestamps() -> Optional[List[Clip]]:
         """Meminta input timestamp manual dari pengguna."""
         print("\n👉 (Opsional) Masukkan timestamp manual (detik).")
         print("   Format: start-end, start-end (Contoh: 60-90, 125.5-150)")
@@ -58,7 +60,7 @@ class ConsoleUI:
             if not user_input:
                 return None
             
-            clips: List[Dict[str, Any]] = []
+            clips: List[Clip] = []
             try:
                 # Split berdasarkan koma
                 parts = user_input.split(',')
@@ -72,17 +74,17 @@ class ConsoleUI:
                         print(f"⚠️  Timestamp tidak valid (Start >= End): {part}")
                         continue
                         
-                    clips.append({
-                        'title': f"Manual Clip {len(clips)+1}",
-                        'start_time': start,
-                        'end_time': end,
-                        'duration': end - start,
-                        'description': "Manual timestamp",
-                        'energy_score': 0,
-                        'vocal_energy': "Unknown",
-                        'audio_justification': "Manual",
-                        'caption': ""
-                    })
+                    clips.append(Clip(
+                        title=f"Manual Clip {len(clips)+1}",
+                        start_time=start,
+                        end_time=end,
+                        duration=end - start,
+                        description="Manual timestamp",
+                        energy_score=0,
+                        vocal_energy="Unknown",
+                        audio_justification="Manual",
+                        caption=""
+                    ))
                 
                 if not clips:
                     print("❌ Tidak ada timestamp valid yang ditemukan. Silakan coba lagi.")

@@ -2,16 +2,20 @@ import logging
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional, Dict, Any, List
+import concurrent.futures
 
 from dotenv import load_dotenv, set_key
 from .modules.downloader import Downloader
 from .modules.summarizer import Summarizer
 from .modules.processor import FaceTrackerProcessor
+from .modules.captioner import KaraokeGenerator
 from .interface import ConsoleUI
 from .core import ProjectCore
 from .utils import UtilsProgress
+from .utils.models import Clip, VideoSummary
 
 class SetupEngine:
     """
@@ -39,7 +43,51 @@ class CreateClipEngine:
         self.video_info = video_info
         self.cookies_path = self.paths.COOKIE_FILE
 
-    def run_clipsengine(self, clips_data: List[Dict[str, Any]]) -> List[Path]:
+    def _process_single_clip(self, task: Dict[str, Any], ffmpeg_args: List[str], silent: bool = False) -> Optional[Path]:
+        """
+        Helper function untuk memproses satu klip dalam thread terpisah.
+        """
+        clip: Clip = task['clip_info']
+        title = clip.title
+        display_index = task.get('display_index', 0)
+        total_clips = task.get('total_clips', 0)
+
+        # Buat instance Downloader lokal untuk thread safety (terutama saat retry/reset info)
+        local_downloader = Downloader(
+            self.url, 
+            cookies_path=self.cookies_path,
+            # Copy video_info agar tidak request ulang jika sudah ada, 
+            # tapi aman dimodifikasi lokal (reset) jika retry
+            video_info=self.video_info.copy() if self.video_info else None
+        )
+
+        logging.debug(f"[{display_index}/{total_clips}] 🎬 Memproses: {title}")
+
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                stream_urls = local_downloader.get_stream_urls(title)
+                runner = UtilsProgress()
+                created_file = runner.create_clip_from_stream(stream_urls, task, ffmpeg_args, silent=silent)
+                
+                if created_file:
+                    return created_file
+                
+                break 
+            except subprocess.CalledProcessError as e:
+                if "403 Forbidden" in (e.stderr or "") and attempt < max_retries - 1:
+                    logging.warning(f"⚠️ URL stream kadaluarsa '{title}'. Retry...")
+                    local_downloader.video_info = None
+                    continue
+                else:
+                    logging.error(f"❌ Gagal memproses klip '{title}': {e}")
+                    break
+            except Exception as e:
+                logging.error(f"❌ Gagal memproses klip '{title}': {e}")
+                break
+        return None
+
+    def run_clipsengine(self, clips_data: List[Clip]) -> List[Path]:
         
         logging.debug("Tahap 3: Memproses klip...")
         all_clips = clips_data
@@ -59,7 +107,7 @@ class CreateClipEngine:
         logging.info(f"Memproses {len(all_clips)} klip...")
 
         for index, clip in enumerate(all_clips):
-            title = clip['title']
+            title = clip.title
             safe_title = "".join([c for c in title if c.isalnum() or c in (' ', '_')]).strip()
             
             # Truncate nama file klip agar tidak error FFmpeg (MAX_PATH)
@@ -95,57 +143,32 @@ class CreateClipEngine:
         # --- DOWNLOAD LOGIC ---
         
         ffmpeg_args = UtilsProgress.get_clip_creation_args()
-
-        yt_dlp_download = Downloader(
-            self.url, 
-            cookies_path=self.cookies_path,
-            video_info=self.video_info,
-        )
-        
         newly_created_files: List[Path] = []
 
-        for task in tasks_to_run:
-            clip = task['clip_info']
-            title = clip['title']
-            display_index = task.get('display_index', 0)
-            total_clips = task.get('total_clips', 0)
+        # --- Refactor: Global Progress Bar ---
+        total_to_create = len(tasks_to_run)
+        completed_count = 0
+        progress_runner = UtilsProgress()
+        progress_runner._print_progress(0, "Memotong Klip", f"0/{total_to_create} Klip")
 
-            logging.info(f"[{display_index}/{total_clips}] 🎬 Memproses: {title}")
-
-            # Mekanisme retry untuk menangani URL stream yang mungkin kadaluarsa (Error 403)
-            max_retries = 2  # 1 percobaan awal + 1 percobaan ulang
-            for attempt in range(max_retries):
-                try:
-                    # Ambil URL stream dari Downloader. Akan menggunakan cache jika ada.
-                    stream_urls = yt_dlp_download.get_stream_urls(title)
-                    
-                    runner = UtilsProgress()
-                    created_file = runner.create_clip_from_stream(stream_urls, task, ffmpeg_args)
-                    
-                    if created_file:
-                        newly_created_files.append(created_file)
-                    
-                    break  # Sukses, keluar dari loop retry
-
-                except subprocess.CalledProcessError as e:
-                    # Cek apakah error disebabkan oleh URL kadaluarsa (403 Forbidden dari FFmpeg)
-                    if "403 Forbidden" in (e.stderr or "") and attempt < max_retries - 1:
-                        logging.warning(f"⚠️ URL stream mungkin kadaluarsa untuk '{title}'. Mencoba lagi dengan URL baru...")
-                        # Hapus cache info untuk memaksa yt-dlp mengambil ulang dari network
-                        yt_dlp_download.video_info = None
-                        continue  # Lanjutkan ke iterasi berikutnya dari loop retry
-                    else:
-                        # Error lain atau percobaan ulang sudah maksimal
-                        logging.error(f"❌ Gagal memproses klip '{title}': {e}")
-                        break  # Keluar dari loop retry, lanjut ke klip berikutnya
-                except Exception as e:
-                    # Menangani error non-subprocess yang tidak terduga
-                    logging.error(f"❌ Gagal memproses klip '{title}' dengan error tak terduga: {e}")
-                    break # Keluar dari loop retry
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future_to_task = {
+                executor.submit(self._process_single_clip, task, ffmpeg_args, silent=True): task
+                for task in tasks_to_run
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_task):
+                result = future.result()
+                if result:
+                    newly_created_files.append(result)
+                
+                completed_count += 1
+                percent = (completed_count / total_to_create) * 100
+                progress_runner._print_progress(percent, "Memotong Klip", f"{completed_count}/{total_to_create} Klip")
         
+        sys.stdout.write("\n")
         mkv_files = sorted(existing_files + newly_created_files, key=lambda p: p.name)
         logging.info(f"✅ {len(newly_created_files)} klip baru berhasil dibuat. Total klip: {len(mkv_files)}.")
-        
         return mkv_files
 
 class MotionTrackingEngine:
@@ -155,47 +178,119 @@ class MotionTrackingEngine:
     def __init__(self, work_dir: Path, core: ProjectCore):
         self.work_dir = work_dir
         self.core = core
-        self.output_dir = work_dir / "processed_clips"
         self.processor = FaceTrackerProcessor(str(self.core.paths.FACE_LANDMARKER_FILE))
 
-    def run_tracking_engine(self, input_clips: List[Path]) -> List[Path]:
+    def run_tracking_engine(self, input_clips: List[Path]) -> List[Dict[str, Any]]:
         if not input_clips:
             logging.warning("Tidak ada klip input untuk tracking.")
             return []
 
-        logging.info("Tahap 4: Menjalankan Motion Tracking & Prediction...")
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info("Tahap 4: Menganalisis Motion Tracking (Python/OpenCV)...")
         
-        processed_files: List[Path] = []
+        analysis_results: List[Dict[str, Any]] = []
         
         for idx, clip_path in enumerate(input_clips):
-            output_path = self.output_dir / f"tracked_{clip_path.name.replace('.mkv', '.mp4')}"
-            
             logging.info(f"[{idx+1}/{len(input_clips)}] 👁️  Tracking wajah pada: {clip_path.name}")
             
-            if output_path.exists():
-                 logging.warning(f"♻️ Cache ditemukan: {output_path.name}")
-                 processed_files.append(output_path)
-                 continue
-
-            # --- Alur Kerja Baru yang Dioptimalkan ---
-            # 1. Analisis video untuk mendapatkan data koordinat crop (cepat, hanya CPU)
+            # Panggil metode analisis yang baru
             analysis_data = self.processor.analyze_video_for_cropping(str(clip_path))
 
             if analysis_data:
-                # 2. Terapkan crop menggunakan FFmpeg dengan akselerasi hardware (cepat, GPU)
-                #    Proses ini juga langsung menggabungkan audio dalam satu langkah.
-                runner = UtilsProgress()
-                # Sumber audio adalah klip input itu sendiri
-                if runner.apply_motion_crop(clip_path, clip_path, output_path, analysis_data):
-                    processed_files.append(output_path)
-                else:
-                    logging.error(f"Gagal menerapkan motion crop pada {clip_path.name}")
+                analysis_results.append({
+                    "clip_path": clip_path,
+                    "analysis_data": analysis_data
+                })
             else:
-                logging.error(f"Gagal menganalisis video untuk motion tracking: {clip_path.name}")
+                logging.error(f"   ❌ Gagal menganalisis tracking untuk {clip_path.name}")
 
-        return processed_files
+        return analysis_results
 
+class CaptioningEngine:
+    """
+    Engine untuk membuat subtitle karaoke dan membakarnya ke video.
+    """
+    def __init__(self, work_dir: Path, core: ProjectCore):
+        self.work_dir = work_dir
+        self.core = core
+        self.generator = KaraokeGenerator(
+            download_root=str(self.core.paths.WHISPERMODELS_DIR)
+        )
+
+    def run_captioning(self, tracking_results: List[Dict[str, Any]]) -> Dict[Path, Path]:
+        if not tracking_results:
+            logging.warning("Tidak ada klip input untuk captioning.")
+            return {}
+
+        logging.info("Tahap 5: Generating Karaoke Subtitles...")
+        
+        subtitle_map: Dict[Path, Path] = {}
+        
+        for result in tracking_results:
+            clip_path = result["clip_path"]
+            analysis_data = result["analysis_data"]
+            
+            # Generate file .ass
+            ass_path = clip_path.with_suffix('.ass')
+            
+            if ass_path.exists():
+                logging.warning(f"♻️ Cache subtitle ditemukan: {ass_path.name}")
+                subtitle_map[clip_path] = ass_path
+                continue
+
+            try:
+                # Extract target resolution from analysis data to ensure subtitles are scaled correctly
+                target_w = analysis_data.get("target_w", 1080)
+                target_h = analysis_data.get("target_h", 1920)
+
+                # Whisper bisa menerima input video langsung untuk diambil audionya
+                self.generator.transcribe_and_generate_karaoke(
+                    str(clip_path), str(ass_path),
+                    play_res_x=target_w, play_res_y=target_h
+                )
+                if ass_path.exists():
+                    subtitle_map[clip_path] = ass_path
+            except Exception as e:
+                logging.error(f"Gagal membuat subtitle untuk {clip_path.name}: {e}")
+
+        return subtitle_map
+
+class RenderEngine:
+    """
+    Engine untuk merender video final dengan semua efek (crop, subtitle).
+    """
+    def __init__(self, work_dir: Path):
+        self.work_dir = work_dir
+        self.output_dir = work_dir / "final_clips"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    def run_rendering(self, tracking_results: List[Dict[str, Any]], subtitle_map: Dict[Path, Path]) -> List[Path]:
+        logging.info("Tahap 6: Merender Video Final (FFmpeg)...")
+        final_files: List[Path] = []
+
+        for result in tracking_results:
+            clip_path = result["clip_path"]
+            analysis_data = result["analysis_data"]
+            subtitle_path = subtitle_map.get(clip_path)
+
+            output_video_path = self.output_dir / f"final_{clip_path.stem}.mp4"
+
+            if output_video_path.exists():
+                logging.warning(f"♻️ Cache video final ditemukan: {output_video_path.name}")
+                final_files.append(output_video_path)
+                continue
+
+            runner = UtilsProgress()
+            if runner.render_with_effects(
+                video_path=clip_path,
+                subtitle_path=subtitle_path,
+                analysis_data=analysis_data,
+                output_path=output_video_path
+            ):
+                final_files.append(output_video_path)
+            else:
+                logging.error(f"❌ Gagal merender video final untuk {clip_path.name}")
+
+        return final_files
 
 class SummarizeEngine:
     def __init__(self, url: str, core: ProjectCore):
@@ -386,7 +481,7 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
     if not work_dir.exists():
         work_dir.mkdir(parents=True, exist_ok=True)
 
-    clips_data = []
+    clips_data: List[Clip] = []
 
     if manual_clips:
         logging.info(f"👉 Mode Manual: Menggunakan {len(manual_clips)} klip dari input pengguna.")
@@ -401,7 +496,8 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
         summary_path = work_dir / "summary.json"
         if summary_path.exists():
             data = json.loads(summary_path.read_text(encoding='utf-8'))
-            clips_data = data.get('clips', [])
+            summary = VideoSummary.from_dict(data)
+            clips_data = summary.clips
 
     # 4. Create Clip Engine: Potong video (Menerima data klip secara langsung)
     clips_engine = CreateClipEngine(url, work_dir=work_dir, core=core, video_info=video_info)
@@ -409,7 +505,14 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
 
     # 5. Motion Tracking Engine: Proses efek visual
     tracking_engine = MotionTrackingEngine(work_dir=work_dir, core=core)
-    final_clips = tracking_engine.run_tracking_engine(createclips)
+    tracking_results = tracking_engine.run_tracking_engine(createclips)
     
-    # Return final processed clips instead of raw clips
+    # 6. Captioning Engine: Generate Subtitles
+    captioning_engine = CaptioningEngine(work_dir=work_dir, core=core)
+    subtitle_map = captioning_engine.run_captioning(tracking_results)
+
+    # 7. Render Engine: Gabungkan semua aset menjadi video final
+    render_engine = RenderEngine(work_dir=work_dir)
+    final_clips = render_engine.run_rendering(tracking_results, subtitle_map)
+
     return work_dir, final_clips

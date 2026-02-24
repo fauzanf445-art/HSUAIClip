@@ -4,3 +4,5 @@ python-dotenv
 mediapipe
 opencv-python
 numpy
+torch
+faster-whisper

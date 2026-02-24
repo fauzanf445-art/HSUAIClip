@@ -145,7 +145,6 @@ class ProjectCore:
         for lib in ['urllib3', 'google','google_genai.models', 'httpx', 'httpcore', 'requests']:
             logging.getLogger(lib).setLevel(logging.WARNING)
 
-
     def verify_assets(self):
         """Memastikan semua aset eksternal (model) tersedia."""
         if ProjectCore._assets_verified:

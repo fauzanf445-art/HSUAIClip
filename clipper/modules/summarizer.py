@@ -32,7 +32,7 @@ class Summarizer:
     def _clean_json_text(self, text: str) -> str:
         """Membersihkan markdown code blocks dari string JSON."""
         # Regex untuk menangkap konten di dalam ```json ... ``` atau ``` ... ```
-        pattern = r"^```(?:json)?\s*(.*?)\s*```$"
+        pattern = r"```(?:json)?\s*(.*?)\s*```"
         match = re.search(pattern, text.strip(), re.DOTALL)
         if match:
             return match.group(1)
@@ -106,7 +106,7 @@ class Summarizer:
 
             # 3. Kirim permintaan ke model AI dan minta output JSON
             logging.debug("Mengirim permintaan multimodal ke Gemini...")
-            response = self.client.models.generate_content( # type: ignore
+            response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=content_parts,
                 config=types.GenerateContentConfig(

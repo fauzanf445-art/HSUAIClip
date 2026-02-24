@@ -33,9 +33,9 @@ class MotionTracker:
 
     def apply_filter(self, current_landmarks_np: np.ndarray) -> np.ndarray:
         self.raw_history.append(current_landmarks_np)
-        history_stack = np.array(list(self.raw_history)) # Cast ke list agar np.array tidak bingung
-        filtered_landmarks = np.mean(history_stack, axis=0)
-        return filtered_landmarks # type: ignore
+        # Simple Moving Average (SMA) smoothing
+        history_stack = np.array(self.raw_history)
+        return np.mean(history_stack, axis=0)
 
     def predict_motion(self, current_filtered_np: np.ndarray) -> np.ndarray:
         num_points = current_filtered_np.shape[0]
@@ -102,6 +102,96 @@ class FaceTrackerProcessor:
                         cv2.line(image, start_pt, center, (0, 0, 255), 1)
         return image
 
+    def create_tracked_video(self, input_path: str, output_path: str) -> bool:
+        """
+        Memproses video: Deteksi wajah -> Crop 9:16 -> Tulis Video Baru (Tanpa Audio).
+        Menggantikan logika FFmpeg sendcmd untuk menghindari error filter.
+        """
+        if not os.path.exists(self.model_path):
+            logging.error(f"Model not found: {self.model_path}")
+            return False
+
+        base_options = python.BaseOptions(model_asset_path=self.model_path)
+        options = vision.FaceLandmarkerOptions(
+            base_options=base_options,
+            running_mode=vision.RunningMode.VIDEO,
+            num_faces=1,
+            min_face_detection_confidence=0.5,
+            min_face_presence_confidence=0.5,
+            min_tracking_confidence=0.5
+        )
+
+        tracker_logic = MotionTracker(window_size=WINDOW_SIZE)
+
+        try:
+            with vision.FaceLandmarker.create_from_options(options) as landmarker:
+                cap = cv2.VideoCapture(input_path)
+                if not cap.isOpened():
+                    logging.error(f"Gagal membuka video: {input_path}")
+                    return False
+
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+                width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+                # Hitung Target Resolusi (9:16)
+                target_h = height
+                target_w = int(target_h * 9 / 16)
+                if target_w % 2 != 0: target_w -= 1
+                if width < target_w: target_w = width
+                
+                # Setup Video Writer (mp4v codec).
+                # Use the static method `VideoWriter.fourcc` to be compliant with modern OpenCV standards
+                # and resolve false-positive attribute errors from static analysis tools like Pylance.
+                fourcc = cv2.VideoWriter.fourcc(*'mp4v')
+                out = cv2.VideoWriter(output_path, fourcc, fps, (target_w, target_h))
+                
+                frame_count = 0
+                cam_x, cam_y = width // 2, height // 2
+
+                logging.info(f"   📐 Processing: {width}x{height} -> {target_w}x{target_h} @ {fps:.2f}fps")
+
+                while cap.isOpened():
+                    success, frame = cap.read()
+                    if not success: break
+
+                    frame_count += 1
+                    timestamp_ms = int((frame_count * 1000) / fps)
+
+                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+
+                    detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
+
+                    if detection_result and detection_result.face_landmarks:
+                        face_landmarks = detection_result.face_landmarks[0]
+                        landmarks_np = np.array([[lm.x, lm.y] for lm in face_landmarks], dtype=np.float32)
+                        current_filtered = tracker_logic.apply_filter(landmarks_np)
+                        centroid = np.mean(current_filtered, axis=0)
+                        cam_x = int(centroid[0] * width)
+                        cam_y = int(centroid[1] * height)
+
+                    x1 = max(0, min(cam_x - (target_w // 2), width - target_w))
+                    y1 = max(0, min(cam_y - (target_h // 2), height - target_h))
+
+                    cropped_frame = frame[y1:y1+target_h, x1:x1+target_w]
+                    out.write(cropped_frame)
+
+                    if frame_count % 15 == 0:
+                        percent = int((frame_count / total_frames) * 100) if total_frames > 0 else 0
+                        sys.stdout.write(f"\r   ⏳ Processing Frames: {percent}% ({frame_count}/{total_frames})")
+                        sys.stdout.flush()
+
+                cap.release()
+                out.release()
+                sys.stdout.write("\n")
+                return True
+
+        except Exception as e:
+            logging.error(f"Error during video processing: {e}", exc_info=True)
+            return False
+
     def analyze_video_for_cropping(self, video_path: str) -> Optional[Dict[str, Any]]:
         """
         Menganalisis video untuk mendeteksi wajah dan menghitung koordinat crop yang optimal per frame.
@@ -132,6 +222,7 @@ class FaceTrackerProcessor:
                 fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
                 width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
                 target_h = height
                 target_w = int(target_h * 9 / 16)
@@ -140,6 +231,8 @@ class FaceTrackerProcessor:
 
                 frame_count = 0
                 cam_x, cam_y = width // 2, height // 2
+
+                logging.info(f"   📐 Analyzing: {width}x{height} -> {target_w}x{target_h} @ {fps:.2f}fps")
 
                 while cap.isOpened():
                     success, frame = cap.read()
@@ -167,7 +260,13 @@ class FaceTrackerProcessor:
 
                     crop_data.append({"timestamp": timestamp_ms / 1000.0, "x": x1, "y": y1})
 
+                    if frame_count % 15 == 0:
+                        percent = int((frame_count / total_frames) * 100) if total_frames > 0 else 0
+                        sys.stdout.write(f"\r   ⏳ Analyzing Frames: {percent}% ({frame_count}/{total_frames})")
+                        sys.stdout.flush()
+
                 cap.release()
+                sys.stdout.write("\n")
                 return {"fps": fps, "target_w": target_w, "target_h": target_h, "crop_data": crop_data}
         except Exception as e:
             logging.error(f"Error during video analysis: {e}", exc_info=True)
