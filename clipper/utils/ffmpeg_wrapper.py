@@ -131,7 +131,7 @@ class FFmpegWrapper:
         logging.debug("🔄 Membuat argumen FFmpeg untuk klip...")
         video_args = FFmpegWrapper._get_video_encoder_args()
         
-        fps_args = ['-r', '30','-vsync', '1']
+        fps_args = ['-r', '30', '-vsync', '1']
         common_args = [
             '-avoid_negative_ts', 'make_zero',
             '-fflags', '+genpts+igndts',
@@ -256,14 +256,14 @@ class FFmpegWrapper:
                     curr = crop_instructions[i]
                     start = curr['timestamp']
                     end = crop_instructions[i+1]['timestamp'] if i < len(crop_instructions) - 1 else start + 10.0
-                    f.write(f"{start:.3f}-{end:.3f} cropfilter x {int(curr['x'])};\n")
-                    f.write(f"{start:.3f}-{end:.3f} cropfilter y {int(curr['y'])};\n")
+                    f.write(f"{start:.3f}-{end:.3f} mycrop x {int(curr['x'])};\n")
+                    f.write(f"{start:.3f}-{end:.3f} mycrop y {int(curr['y'])};\n")
 
             encoder_args = self.get_clip_creation_args()
             target_w, target_h = analysis_data['target_w'], analysis_data['target_h']
             escaped_cmd_path = cmd_file_path.resolve().as_posix().replace(':', '\\:')
             
-            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0@cropfilter"
+            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0:name=mycrop"
             if subtitle_path and subtitle_path.exists():
                 escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
                 filter_chain += f",ass='{escaped_sub_path}'"
