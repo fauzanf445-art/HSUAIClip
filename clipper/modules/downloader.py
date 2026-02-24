@@ -7,11 +7,12 @@ from typing import Optional, Dict, Any, cast, Union
 import yt_dlp
 
 class Downloader:
-    def __init__(self, url: str, cookies_path: Optional[Union[str, Path]] = None, video_info: Optional[Dict[str, Any]] = None):
+    def __init__(self, url: str, cookies_path: Optional[Union[str, Path]] = None, video_info: Optional[Dict[str, Any]] = None, deno_path: Optional[str] = None):
         
         self.url = url
         self.cookies_path = cookies_path
         self.video_info = video_info
+        self.deno_path = deno_path
     
     @staticmethod
     def check_and_setup_cookies(cookies_path: Union[str, Path]) -> Optional[Path]:
@@ -59,7 +60,12 @@ class Downloader:
             'no_warnings': False,
             'socket_timeout': 30,
             'retries': 10,
+            
         }
+
+        if self.deno_path:
+            opts['js_runtimes'] = [f"deno:{self.deno_path}"]
+            logging.debug(f"🦕 Menggunakan Deno JS runtime: {self.deno_path}")
         
         if self.cookies_path:
             path_obj = Path(self.cookies_path)

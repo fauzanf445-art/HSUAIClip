@@ -42,6 +42,7 @@ class CreateClipEngine:
         self.paths = core.paths
         self.video_info = video_info
         self.cookies_path = self.paths.COOKIE_FILE
+        self.deno_path = self.core.find_executable('deno.exe') or self.core.find_executable('deno')
 
     def _process_single_clip(self, task: Dict[str, Any], ffmpeg_args: List[str], silent: bool = False) -> Optional[Path]:
         """
@@ -58,7 +59,8 @@ class CreateClipEngine:
             cookies_path=self.cookies_path,
             # Copy video_info agar tidak request ulang jika sudah ada, 
             # tapi aman dimodifikasi lokal (reset) jika retry
-            video_info=self.video_info.copy() if self.video_info else None
+            video_info=self.video_info.copy() if self.video_info else None,
+            deno_path=self.deno_path
         )
 
         logging.debug(f"[{display_index}/{total_clips}] 🎬 Memproses: {title}")
@@ -345,10 +347,12 @@ class SummarizeEngine:
         
         try:
             logging.debug("Tahap 1: Memulai proses download...")
+            deno_path = self.core.find_executable('deno.exe') or self.core.find_executable('deno')
             yt_dlp_download = Downloader(
                 self.url,
                 cookies_path=self.paths.COOKIE_FILE,
                 video_info=video_info,
+                deno_path=deno_path,
             )
             
             # 1. Cek Cache Audio Final (WAV)
@@ -473,7 +477,8 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
     # 3. Common Setup: Resolve Folder & Info (Diperlukan untuk Manual maupun Auto)
     Downloader.check_and_setup_cookies(core.paths.COOKIE_FILE)
     
-    downloader = Downloader(url, cookies_path=core.paths.COOKIE_FILE)
+    deno_path = core.find_executable('deno.exe') or core.find_executable('deno')
+    downloader = Downloader(url, cookies_path=core.paths.COOKIE_FILE, deno_path=deno_path)
     folder_name = downloader.get_folder_name()
     video_info = downloader.get_info()
     
