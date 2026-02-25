@@ -1,11 +1,11 @@
 import os
 import logging
 import torch
+import random
 from pathlib import Path
 from typing import List, Tuple, Optional
-from faster_whisper import WhisperModel
 
-# Configure logging
+from faster_whisper import WhisperModel
 
 class KaraokeGenerator:
     """
@@ -88,7 +88,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Arial,60,&H00FFFFFF,&H0000FFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,0,2,10,10,50,1
+Style: Karaoke,Poppins,60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,3,2,10,10,400,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -121,9 +121,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
             logging.info(f"📝 Transcription complete. Found {len(all_words)} words. Generating subtitles...")
 
-            # Group words into chunks of exactly 3 words
+            # Konfigurasi untuk Sliding Window
             chunk_size = 3
-            chunks = [all_words[i:i + chunk_size] for i in range(0, len(all_words), chunk_size)]
 
             # Ensure output directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -131,41 +130,48 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(self.generate_ass_header(play_res_x, play_res_y))
 
-                for chunk in chunks:
-                    if not chunk:
+                # Implementasi Sliding Window
+                for i in range(len(all_words)):
+                    window = all_words[i:i + chunk_size]
+                    if not window:
                         continue
 
-                    # Determine line start and end times
-                    start_time = chunk[0].start
-                    end_time = chunk[-1].end
+                    # Waktu mulai adalah awal kata pertama di jendela
+                    start_time = window[0].start
+                    
+                    # Waktu selesai adalah awal kata BERIKUTNYA (untuk efek hilang-muncul)
+                    if i + 1 < len(all_words):
+                        end_time = all_words[i+1].start
+                    else:
+                        # Untuk baris terakhir, berakhir saat kata terakhir selesai
+                        end_time = window[-1].end
+
+                    # Pastikan durasi tidak negatif jika ada tumpang tindih kecil
+                    if end_time <= start_time:
+                        end_time = window[-1].end
                     
                     start_str = self.format_timestamp(start_time)
                     end_str = self.format_timestamp(end_time)
 
-                    dialogue_text = ""
-                    cursor = start_time
+                    dialogue_text = "{\\blur3}"
 
-                    for i, word in enumerate(chunk):
+                    for j, word in enumerate(window):
                         w_start = word.start
                         w_end = word.end
-                        text = word.word.strip()
+                        text = word.word.strip().replace('.', '').replace(',', '').replace('?', '').replace('!', '')
 
-                        # Handle time gap or space between words
-                        if i > 0:
-                            gap = w_start - cursor
-                            # If there is a gap, animate the space. 
-                            # Even if gap is 0, we usually want a space separator for readability.
-                            gap_cs = int(gap * 100) if gap > 0 else 0
-                            dialogue_text += f"{{\\kf{gap_cs}}} "
+                        if j > 0:
+                            dialogue_text += " "
                         
-                        # Calculate word duration in centiseconds
-                        dur = w_end - w_start
-                        dur_cs = int(dur * 100)
+                        rel_start = int((w_start - start_time) * 1000)
                         
-                        # Append word with karaoke fill tag
-                        dialogue_text += f"{{\\kf{dur_cs}}}{text}"
+                        # Random Font Size (90% - 110%)
+                        scale = random.randint(90, 110)
                         
-                        cursor = w_end
+                        # Animasi: Base Scale -> Scale Up 120% saat mulai -> Scale Down ke Random saat selesai
+                        anim_tags = f"\\fscx{scale}\\fscy{scale}\\t({rel_start},{rel_start+100},\\fscx120\\fscy120)\\t({rel_start+100},{rel_start+200},\\fscx{scale}\\fscy{scale})"
+                        
+                        dialogue_text += f"{{{anim_tags}}}{text}"
 
                     # Write the event line
                     f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text}\n")

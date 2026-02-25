@@ -263,8 +263,9 @@ class RenderEngine:
     """
     Engine untuk merender video final dengan semua efek (crop, subtitle).
     """
-    def __init__(self, work_dir: Path):
+    def __init__(self, work_dir: Path, core: ProjectCore):
         self.work_dir = work_dir
+        self.core = core
         self.output_dir = work_dir / "final_clips"
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -289,7 +290,8 @@ class RenderEngine:
                 video_path=tracked_video,
                 audio_path=clip_path,
                 subtitle_path=subtitle_path,
-                output_path=output_video_path
+                output_path=output_video_path,
+                fonts_dir=self.core.paths.FONTS_DIR
             ):
                 final_files.append(output_video_path)
             else:
@@ -520,7 +522,7 @@ def run_project(url: str) -> tuple[Path, List[Path]]:
     subtitle_map = captioning_engine.run_captioning(tracking_results)
 
     # 7. Render Engine: Gabungkan semua aset menjadi video final
-    render_engine = RenderEngine(work_dir=work_dir)
+    render_engine = RenderEngine(work_dir=work_dir, core=core)
     final_clips = render_engine.run_rendering(tracking_results, subtitle_map)
 
     return work_dir, final_clips

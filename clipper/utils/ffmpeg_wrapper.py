@@ -1,7 +1,6 @@
 import re
 import subprocess
 import logging
-import contextlib
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
@@ -260,7 +259,7 @@ class FFmpegWrapper:
             logging.error(f"❌ Gagal konversi audio: {e}")
         return None
 
-    def render_with_effects(self, video_path: Path, audio_path: Path, subtitle_path: Optional[Path], output_path: Path) -> bool:
+    def render_with_effects(self, video_path: Path, audio_path: Path, subtitle_path: Optional[Path], output_path: Path, fonts_dir: Optional[Path] = None) -> bool:
         """
         Merender video final dengan menggabungkan:
         1. Video hasil crop (OpenCV)
@@ -276,7 +275,13 @@ class FFmpegWrapper:
             filter_chain = "[0:v]null[v_out]" # Default pass-through jika tidak ada subtitle
             if subtitle_path and subtitle_path.exists():
                 escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
-                filter_chain = f"[0:v]ass='{escaped_sub_path}'[v_out]"
+                
+                fonts_opt = ""
+                if fonts_dir and fonts_dir.exists():
+                    escaped_fonts_dir = fonts_dir.resolve().as_posix().replace(':', '\\:')
+                    fonts_opt = f":fontsdir='{escaped_fonts_dir}'"
+
+                filter_chain = f"[0:v]ass='{escaped_sub_path}'{fonts_opt}[v_out]"
 
             cmd = [
                 'ffmpeg', '-y', '-nostats',
