@@ -1,9 +1,9 @@
 import re
 import subprocess
 import logging
-from typing import List, Optional, Deque, Dict, Any
+import contextlib
+from typing import List, Optional, Dict, Any
 from pathlib import Path
-from collections import deque
 
 from .models import Clip
 from .ui_progress import ConsoleProgressBar
@@ -41,23 +41,39 @@ class FFmpegWrapper:
         self.ui.update(percent, task_name, extra_info)
 
     @staticmethod
+    def _check_encoder_exists(encoder: str) -> bool:
+        """
+        Memeriksa apakah encoder yang diberikan ada dalam daftar encoder FFmpeg.
+        """
+        try:
+            result = subprocess.run(['ffmpeg', '-encoders'], capture_output=True, text=True, check=True)
+            return encoder in result.stdout
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Gagal memeriksa encoder: {e}")
+            return False
+
+    @staticmethod
     def _get_video_encoder_args() -> List[str]:
         """
         Mendeteksi hardware acceleration yang tersedia dan mengembalikan list argumen FFmpeg *hanya untuk video*.
         """
         # 1. Cek NVIDIA NVENC (Prioritas Utama)
         try:
+            if not FFmpegWrapper._check_encoder_exists('h264_nvenc'):
+                raise FileNotFoundError("Encoder h264_nvenc tidak ditemukan.")
+
             subprocess.run(
-                ['ffmpeg','-hwaccel', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=64x64:d=0.1', 
+                ['ffmpeg', '-v', 'error', '-f', 'lavfi', '-i', 'color=black:s=256x256:d=0.1', 
                  '-c:v', 'h264_nvenc', '-f', 'null', '-'], 
                 check=True, capture_output=True
             )
             logging.info("🚀 Hardware Detected: NVIDIA NVENC")
             return [
                 '-c:v', 'h264_nvenc',
-                '-preset', 'p4',       # Balance antara speed dan quality
-                '-cq', '23',           # Constant Quality
+                '-preset', 'p4',
+                '-cq', '24',           # Constant Quality
                 '-rc', 'vbr',          # Variable Bitrate
+                '-tune', 'hq',         # High Quality tuning
                 '-pix_fmt', 'yuv420p'  # Kompatibilitas universal
             ]
         except (subprocess.CalledProcessError, FileNotFoundError):
@@ -127,7 +143,7 @@ class FFmpegWrapper:
         """
         if FFmpegWrapper._cached_ffmpeg_clip_args is not None:
             return FFmpegWrapper._cached_ffmpeg_clip_args
-        
+
         logging.debug("🔄 Membuat argumen FFmpeg untuk klip...")
         video_args = FFmpegWrapper._get_video_encoder_args()
         
@@ -148,13 +164,13 @@ class FFmpegWrapper:
     def _execute_with_stderr_parse(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None, silent: bool = False):
         """Eksekusi FFmpeg dengan progress dari parsing stderr."""
         try:
-            process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, encoding='utf-8', errors='ignore')
+            process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace')
             
             if not process.stderr:
                 if process: process.wait()
                 return
 
-            stderr_output: Deque[str] = deque([], maxlen=20)
+            stderr_output: List[str] = []
             total_duration_from_ffmpeg = total_duration if total_duration else 0.0
 
             for line in process.stderr:
@@ -220,7 +236,7 @@ class FFmpegWrapper:
         if audio_url:
             cmd.extend(['-map', '0:v:0', '-map', '1:a:0'])
 
-        cmd.extend([*(ffmpeg_args or []), '-y', str(output_path)])
+        cmd.extend([*ffmpeg_args, '-y', str(output_path)])
 
         try:
             self.execute(cmd, f"Memotong Klip: {output_path.name}", total_duration=duration, silent=silent)
@@ -244,38 +260,30 @@ class FFmpegWrapper:
             logging.error(f"❌ Gagal konversi audio: {e}")
         return None
 
-    def render_with_effects(self, video_path: Path, subtitle_path: Optional[Path], analysis_data: Dict[str, Any], output_path: Path) -> bool:
-        """Merender video final dengan crop dinamis dan subtitle."""
-        crop_instructions = analysis_data.get("crop_data")
-        if not crop_instructions: return False
-
-        cmd_file_path = output_path.with_suffix('.txt')
+    def render_with_effects(self, video_path: Path, audio_path: Path, subtitle_path: Optional[Path], output_path: Path) -> bool:
+        """
+        Merender video final dengan menggabungkan:
+        1. Video hasil crop (OpenCV)
+        2. Audio dari klip asli
+        3. Subtitle (jika ada)
+        """        
         try:
-            # PERBAIKAN: Menggunakan target 'crop' (tanpa :name) agar kompatibel dengan FFmpeg Colab
-            with open(cmd_file_path, 'w') as f:
-                for i in range(len(crop_instructions)):
-                    curr = crop_instructions[i]
-                    start = curr['timestamp']
-                    end = crop_instructions[i+1]['timestamp'] if i < len(crop_instructions) - 1 else start + 10.0
-                    # 'crop' akan otomatis menargetkan filter crop pertama
-                    f.write(f"{start:.3f}-{end:.3f} crop x {int(curr['x'])};\n")
-                    f.write(f"{start:.3f}-{end:.3f} crop y {int(curr['y'])};\n")
-                    
             encoder_args = self.get_clip_creation_args()
-            target_w, target_h = analysis_data['target_w'], analysis_data['target_h']
-            escaped_cmd_path = cmd_file_path.resolve().as_posix().replace(':', '\\:')
             
-            filter_chain = f"[0:v]sendcmd=f='{escaped_cmd_path}',crop={target_w}:{target_h}:x=0:y=0"
+            # Input 0: Video Cropped (Tanpa Audio)
+            # Input 1: Audio Source (Klip Asli)
+            
+            filter_chain = "[0:v]null[v_out]" # Default pass-through jika tidak ada subtitle
             if subtitle_path and subtitle_path.exists():
                 escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
-                filter_chain += f",ass='{escaped_sub_path}'"
-            filter_chain += "[v_out]"
+                filter_chain = f"[0:v]ass='{escaped_sub_path}'[v_out]"
 
             cmd = [
                 'ffmpeg', '-y', '-nostats',
-                '-i', str(video_path),
+                '-i', str(video_path), 
+                '-i', str(audio_path),
                 '-filter_complex', filter_chain,
-                '-map', '[v_out]', '-map', '0:a:0',
+                '-map', '[v_out]', '-map', '1:a:0',
                 '-shortest', *encoder_args, str(output_path)
             ]
 
@@ -290,7 +298,3 @@ class FFmpegWrapper:
         except Exception as e:
             logging.error(f"Gagal merender video: {e}", exc_info=True)
             return False
-        finally:
-            if cmd_file_path.exists():
-                try: cmd_file_path.unlink()
-                except Exception: pass

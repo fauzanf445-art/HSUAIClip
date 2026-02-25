@@ -175,17 +175,3 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         except Exception as e:
             logging.error(f"Error during transcription/generation: {e}")
             raise
-
-if __name__ == "__main__":
-    # Target file as requested
-    INPUT_FILE = "input_video.mp4"
-    OUTPUT_FILE = "input_video.ass"
-
-    if Path(INPUT_FILE).exists():
-        try:
-            generator = KaraokeGenerator()
-            generator.transcribe_and_generate_karaoke(INPUT_FILE, OUTPUT_FILE)
-        except Exception as e:
-            logging.error(f"Process failed: {e}")
-    else:
-        logging.warning(f"File '{INPUT_FILE}' not found. Please ensure the file exists in the current directory.")

@@ -187,20 +187,26 @@ class MotionTrackingEngine:
             logging.warning("Tidak ada klip input untuk tracking.")
             return []
 
-        logging.info("Tahap 4: Menganalisis Motion Tracking (Python/OpenCV)...")
+        logging.info("Tahap 4: Memproses Motion Tracking (Python/OpenCV)...")
         
         analysis_results: List[Dict[str, Any]] = []
+        tracked_dir = self.work_dir / "tracked_clips"
+        tracked_dir.mkdir(parents=True, exist_ok=True)
         
         for idx, clip_path in enumerate(input_clips):
             logging.info(f"[{idx+1}/{len(input_clips)}] 👁️  Tracking wajah pada: {clip_path.name}")
             
-            # Panggil metode analisis yang baru
-            analysis_data = self.processor.analyze_video_for_cropping(str(clip_path))
+            output_tracked_path = tracked_dir / f"tracked_{clip_path.stem}.mp4"
+            
+            # Panggil metode create_tracked_video yang baru
+            result = self.processor.create_tracked_video(str(clip_path), str(output_tracked_path))
 
-            if analysis_data:
+            if result:
                 analysis_results.append({
-                    "clip_path": clip_path,
-                    "analysis_data": analysis_data
+                    "original_clip": clip_path,
+                    "tracked_video": Path(result["tracked_video"]),
+                    "width": result["width"],
+                    "height": result["height"]
                 })
             else:
                 logging.error(f"   ❌ Gagal menganalisis tracking untuk {clip_path.name}")
@@ -228,8 +234,9 @@ class CaptioningEngine:
         subtitle_map: Dict[Path, Path] = {}
         
         for result in tracking_results:
-            clip_path = result["clip_path"]
-            analysis_data = result["analysis_data"]
+            clip_path = result["original_clip"]
+            target_w = result["width"]
+            target_h = result["height"]
             
             # Generate file .ass
             ass_path = clip_path.with_suffix('.ass')
@@ -240,10 +247,6 @@ class CaptioningEngine:
                 continue
 
             try:
-                # Extract target resolution from analysis data to ensure subtitles are scaled correctly
-                target_w = analysis_data.get("target_w", 1080)
-                target_h = analysis_data.get("target_h", 1920)
-
                 # Whisper bisa menerima input video langsung untuk diambil audionya
                 self.generator.transcribe_and_generate_karaoke(
                     str(clip_path), str(ass_path),
@@ -270,8 +273,8 @@ class RenderEngine:
         final_files: List[Path] = []
 
         for result in tracking_results:
-            clip_path = result["clip_path"]
-            analysis_data = result["analysis_data"]
+            clip_path = result["original_clip"]
+            tracked_video = result["tracked_video"]
             subtitle_path = subtitle_map.get(clip_path)
 
             output_video_path = self.output_dir / f"final_{clip_path.stem}.mp4"
@@ -283,9 +286,9 @@ class RenderEngine:
 
             runner = UtilsProgress()
             if runner.render_with_effects(
-                video_path=clip_path,
+                video_path=tracked_video,
+                audio_path=clip_path,
                 subtitle_path=subtitle_path,
-                analysis_data=analysis_data,
                 output_path=output_video_path
             ):
                 final_files.append(output_video_path)
