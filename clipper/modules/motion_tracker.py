@@ -3,11 +3,11 @@ import mediapipe as mp
 import numpy as np
 import os
 import logging
-from typing import Optional, Deque
+
+from typing import Optional, Deque, Dict, Any, Callable
 from collections import deque
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from typing import Dict, Any, Callable
 
 class MotionTracker:
     def __init__(self, window_size: int, prediction_frames: int):
@@ -157,7 +157,7 @@ class FaceTrackerProcessor:
                     timestamp_ms = int((frame_count * 1000) / fps)
 
                     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+                    mp_image = mp.Image.create_from_array(rgb_frame)
 
                     detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
