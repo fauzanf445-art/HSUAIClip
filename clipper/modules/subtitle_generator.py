@@ -91,6 +91,19 @@ class SubtitleGenerator:
         """
         Returns the standard V4+ Styles header for the .ass file.
         """
+        # --- UKURAN FONT DINAMIS ---
+        # Ukuran font dasar dan margin untuk video dengan tinggi 1080p
+        base_font_size = 60
+        base_margin_v = 60
+        reference_height = 1080
+
+        # Skalakan ukuran font dan margin berdasarkan tinggi video yang sebenarnya
+        scale_factor = play_res_y / reference_height
+        font_size = int(base_font_size * scale_factor)
+        margin_v = int(base_margin_v * scale_factor)
+
+        logging.info(f"   -> Menyesuaikan subtitle untuk resolusi {play_res_y}p. Ukuran Font: {font_size}, Margin-V: {margin_v}")
+
         return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {play_res_x}
@@ -100,13 +113,13 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Poppins,60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,100,100,0,0,1,2,3,2,10,10,400,1
+Style: Karaoke,Poppins Bold,{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,2,0,8,10,10,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    def generate_subtitles(self, input_path: str, output_path: str, chunk_size: int, play_res_x: int = 1920, play_res_y: int = 1080):
+    def generate_subtitles(self, input_path: str, output_path: str, chunk_size: int, play_res_x: int = 1920, play_res_y: int = 1080) -> None:
         """
         Mentranskripsi media input (audio/video) dan menghasilkan file subtitle .ass.
         """
@@ -139,51 +152,48 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(self.generate_ass_header(play_res_x, play_res_y))
 
-                # Implementasi Sliding Window
-                for i in range(len(all_words)):
-                    window = all_words[i:i + chunk_size]
-                    if not window:
+                # Implementasi Chunking dengan animasi Pop & Bounce per kata
+                word_chunks = [all_words[i:i + chunk_size] for i in range(0, len(all_words), chunk_size)]
+
+                for chunk in word_chunks:
+                    if not chunk:
                         continue
 
-                    # Waktu mulai adalah awal kata pertama di jendela
-                    start_time = window[0].start
+                    # Durasi baris adalah dari awal kata pertama hingga akhir kata terakhir
+                    line_start_time = chunk[0].start
+                    line_end_time = chunk[-1].end
                     
-                    # Waktu selesai adalah awal kata BERIKUTNYA (untuk efek hilang-muncul)
-                    if i + 1 < len(all_words):
-                        end_time = all_words[i+1].start
-                    else:
-                        # Untuk baris terakhir, berakhir saat kata terakhir selesai
-                        end_time = window[-1].end
+                    start_str = self.format_timestamp(line_start_time)
+                    end_str = self.format_timestamp(line_end_time)
 
-                    # Pastikan durasi tidak negatif jika ada tumpang tindih kecil
-                    if end_time <= start_time:
-                        end_time = window[-1].end
-                    
-                    start_str = self.format_timestamp(start_time)
-                    end_str = self.format_timestamp(end_time)
+                    # Bangun teks untuk seluruh baris, dengan animasi per kata
+                    dialogue_text = "{\\blur3}" # Terapkan blur ke seluruh baris
 
-                    dialogue_text = "{\\blur3}"
+                    for word in chunk:
+                        text = word.word.strip()
 
-                    for j, word in enumerate(window):
-                        w_start = word.start
-                        w_end = word.end
-                        text = word.word.strip().replace('.', '').replace(',', '').replace('?', '').replace('!', '')
-
-                        if j > 0:
-                            dialogue_text += " "
+                        # Pengaturan waktu relatif terhadap awal baris dialog
+                        rel_start_ms = int((word.start - line_start_time) * 1000)
                         
-                        rel_start = int((w_start - start_time) * 1000)
-                        
-                        # Random Font Size (90% - 110%)
-                        scale = random.randint(90, 110)
-                        
-                        # Animasi: Base Scale -> Scale Up 120% saat mulai -> Scale Down ke Random saat selesai
-                        anim_tags = f"\\fscx{scale}\\fscy{scale}\\t({rel_start},{rel_start+100},\\fscx120\\fscy120)\\t({rel_start+100},{rel_start+200},\\fscx{scale}\\fscy{scale})"
-                        
-                        dialogue_text += f"{{{anim_tags}}}{text}"
+                        # Tentukan durasi fase animasi (dalam ms)
+                        jump_duration = 120
+                        pop_duration = 150
+                        settle_duration = 100
 
-                    # Write the event line
-                    f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text}\n")
+                        # Hitung waktu akhir untuk setiap fase
+                        jump_end_ms = rel_start_ms + jump_duration
+                        pop_end_ms = jump_end_ms + pop_duration
+                        settle_end_ms = pop_end_ms + settle_duration
+
+                        # Buat tag animasi berurutan: Lompat -> Pop -> Kembali Normal
+                        anim_tags = (f"\\t({rel_start_ms},{jump_end_ms},\\fscy125\\fscx90)"
+                                     f"\\t({jump_end_ms},{pop_end_ms},\\fscx115\\fscy115)"
+                                     f"\\t({pop_end_ms},{settle_end_ms},\\fscx100\\fscy100)")
+                        
+                        dialogue_text += f" {{{anim_tags}}}{text}"
+
+                    # Tulis satu baris event untuk setiap kelompok kata
+                    f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text.strip()}\n")
 
             logging.info(f"✅ Subtitle disimpan di: {output_path}")
 
