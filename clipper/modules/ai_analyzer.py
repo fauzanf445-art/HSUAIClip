@@ -8,9 +8,9 @@ from typing import Optional, List, Any, Union, Dict
 from google import genai
 from google.genai import types, errors
 
-class Summarizer:
+class AIAnalyzer:
     """
-    Membuat ringkasan dari transkrip, dan audio dengan gemini.
+    Menganalisis transkrip dan audio dengan Gemini untuk menemukan klip potensial.
     """
     
     def __init__(self, api_key: str, model_name: str = "gemini-flash-latest"):
@@ -59,7 +59,7 @@ class Summarizer:
                 with audio_file_path.open('rb') as audio_data:
                     uploaded_file = self.client.files.upload(
                         file=audio_data,
-                        config={'mime_type': 'audio/mpeg'}
+                        config={'mime_type': 'audio/wav'}
                     )
                 
                 # Tunggu proses indexing di server Google

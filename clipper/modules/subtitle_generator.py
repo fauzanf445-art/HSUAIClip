@@ -3,19 +3,20 @@ import logging
 import torch
 import random
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any
 
 from faster_whisper import WhisperModel
 
-class KaraokeGenerator:
+class SubtitleGenerator:
     """
-    Generates karaoke-style subtitles (.ass) using Faster-Whisper with smart device selection.
+    Menghasilkan subtitle (.ass) menggunakan Faster-Whisper dengan pemilihan perangkat cerdas.
     """
-    def __init__(self, download_root: Optional[str] = None):
+    def __init__(self, download_root: Optional[str] = None, config: Optional[Any] = None):
         # Atribut ini akan diisi oleh _initialize_model_config
         self.device: str = "cpu"
         self.compute_type: str = "int8"
         self.model_size: str = "small"
+        self.config = config
         
         self._initialize_model_config()
         
@@ -43,26 +44,37 @@ class KaraokeGenerator:
                 gpu_name = props.name
                 logging.info(f"🚀 AI Hardware: NVIDIA GPU ({gpu_name}) | VRAM: {vram_gb:.2f}GB")
 
-                if vram_gb >= 10:
-                    self.model_size = "large-v3"
-                    logging.info(f"   -> Tier: High-End. Memilih model Whisper: {self.model_size}")
-                    self.device, self.compute_type = "cuda", "float16"
-                elif vram_gb >= 4:
-                    self.model_size = "medium"
-                    logging.info(f"   -> Tier: Mid-Range. Memilih model Whisper: {self.model_size}")
-                    self.device, self.compute_type = "cuda", "float16"
+                # Gunakan konfigurasi terpusat jika tersedia
+                if self.config and hasattr(self.config, 'WHISPER_MODELS'):
+                    models = self.config.WHISPER_MODELS
+                    if vram_gb >= models['high_end']['vram_min']:
+                        self.model_size = models['high_end']['name']
+                        logging.info(f"   -> Tier: High-End. Memilih model Whisper: {self.model_size}")
+                        self.device, self.compute_type = "cuda", "float16"
+                    elif vram_gb >= models['mid_range']['vram_min']:
+                        self.model_size = models['mid_range']['name']
+                        logging.info(f"   -> Tier: Mid-Range. Memilih model Whisper: {self.model_size}")
+                        self.device, self.compute_type = "cuda", "float16"
+                    else:
+                        self.model_size = models['low_end']['name']
+                        logging.warning(f"   -> Tier: Low-End GPU. VRAM < {models['mid_range']['vram_min']}GB. Fallback ke model: {self.model_size} di CPU.")
+                        self.device, self.compute_type = "cpu", "int8"
                 else:
-                    self.model_size = "small"
-                    logging.warning(f"   -> Tier: Low-End GPU. VRAM < 4GB. Fallback ke model: {self.model_size} di CPU.")
-                    self.device, self.compute_type = "cpu", "int8"
+                    # Fallback jika config tidak ada
+                    if vram_gb >= 10: self.model_size = "large-v3"
+                    elif vram_gb >= 4: self.model_size = "medium"
+                    else: self.model_size = "small"
+                    logging.warning("   -> Konfigurasi model tidak ditemukan, menggunakan fallback VRAM.")
+                    self.device, self.compute_type = ("cuda", "float16") if self.model_size != "small" else ("cpu", "int8")
+
             else:
                 logging.warning("⚠️ GPU tidak terdeteksi untuk AI. Menggunakan CPU.")
-                self.model_size = "small"
+                self.model_size = self.config.WHISPER_MODELS['low_end']['name'] if self.config and hasattr(self.config, 'WHISPER_MODELS') else "small"
                 logging.info(f"   -> Tier: CPU Only. Memilih model Whisper: {self.model_size}")
                 self.device, self.compute_type = "cpu", "int8"
         except (ImportError, Exception):
             logging.warning("⚠️ Gagal mendeteksi GPU (Torch error?). Default ke CPU.")
-            self.model_size = "small"
+            self.model_size = self.config.WHISPER_MODELS['low_end']['name'] if self.config and hasattr(self.config, 'WHISPER_MODELS') else "small"
             logging.info(f"   -> Tier: CPU Only (Detection Error). Memilih model Whisper: {self.model_size}")
             self.device, self.compute_type = "cpu", "int8"
 
@@ -94,9 +106,9 @@ Style: Karaoke,Poppins,60,&H00FFFFFF,&H00FFFFFF,&H00000000,&H00000000,-1,0,0,0,1
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-    def transcribe_and_generate_karaoke(self, input_path: str, output_path: str, play_res_x: int = 1920, play_res_y: int = 1080):
+    def generate_subtitles(self, input_path: str, output_path: str, chunk_size: int, play_res_x: int = 1920, play_res_y: int = 1080):
         """
-        Transcribes the input media (audio/video) and generates an .ass subtitle file with karaoke effects.
+        Mentranskripsi media input (audio/video) dan menghasilkan file subtitle .ass.
         """
         if not os.path.exists(input_path):
             logging.error(f"Input file not found: {input_path}")
@@ -120,9 +132,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 return
 
             logging.info(f"📝 Transcription complete. Found {len(all_words)} words. Generating subtitles...")
-
-            # Konfigurasi untuk Sliding Window
-            chunk_size = 3
 
             # Ensure output directory exists
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -176,7 +185,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     # Write the event line
                     f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text}\n")
 
-            logging.info(f"✅ Karaoke subtitles saved to: {output_path}")
+            logging.info(f"✅ Subtitle disimpan di: {output_path}")
 
         except Exception as e:
             logging.error(f"Error during transcription/generation: {e}")

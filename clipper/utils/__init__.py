@@ -1,4 +1,3 @@
-from .ffmpeg_wrapper import FFmpegWrapper as UtilsProgress
-from .ui_progress import ConsoleProgressBar
+from .ffmpeg_wrapper import FFmpegWrapper
 
-__all__ = ['UtilsProgress', 'ConsoleProgressBar']
+__all__ = ['FFmpegWrapper']

@@ -4,8 +4,8 @@ import logging
 from typing import List, Optional, Dict, Any
 from pathlib import Path
 
+from tqdm import tqdm
 from .models import Clip
-from .ui_progress import ConsoleProgressBar
 
 class FFmpegWrapper:
     """
@@ -30,14 +30,7 @@ class FFmpegWrapper:
     _cached_ffmpeg_clip_args: Optional[List[str]] = None
 
     def __init__(self):
-        self.ui = ConsoleProgressBar()
-
-    def _print_progress(self, percent: float, task_name: str, extra_info: str = ""):
-        """
-        Proxy method untuk menjaga kompatibilitas dengan kode lama (engine.py)
-        yang memanggil _print_progress secara langsung.
-        """
-        self.ui.update(percent, task_name, extra_info)
+        pass # No longer needs to initialize ConsoleProgressBar
 
     @staticmethod
     def _check_encoder_exists(encoder: str) -> bool:
@@ -162,41 +155,42 @@ class FFmpegWrapper:
 
     def _execute_with_stderr_parse(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None, silent: bool = False):
         """Eksekusi FFmpeg dengan progress dari parsing stderr."""
-        try:
+        with tqdm(total=100, desc=task_name, disable=silent, leave=False, unit='%') as pbar:
             process = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.DEVNULL, text=True, encoding='utf-8', errors='replace')
             
             if not process.stderr:
                 if process: process.wait()
                 return
 
-            stderr_output: List[str] = []
-            total_duration_from_ffmpeg = total_duration if total_duration else 0.0
+            try:
+                stderr_output: List[str] = []
+                total_duration_from_ffmpeg = total_duration if total_duration else 0.0
 
-            for line in process.stderr:
-                stderr_output.append(line)
-                if total_duration_from_ffmpeg <= 0:
-                    duration_match = self.DURATION_PATTERN.search(line)
-                    if duration_match:
-                        h, m, s, hs = map(int, duration_match.groups())
-                        total_duration_from_ffmpeg = h * 3600 + m * 60 + s + hs / 100
-                if 'time=' in line:
-                    match = self.TIME_PATTERN.search(line)
-                    if match:
-                        h, m, s, hs = map(int, match.groups())
-                        logging.debug(f"FFmpeg Output Line: {line.strip()}")
-                        current_time = h * 3600 + m * 60 + s + hs / 100
-                        percent = min(100, (current_time / total_duration_from_ffmpeg) * 100) if total_duration_from_ffmpeg > 0 else 0
-                        if not silent:
-                            self.ui.update(percent, task_name)
-            
-            process.wait()
-            if process.returncode != 0:
-                error_log = "".join(stderr_output)
-                logging.error(f"FFmpeg Error during '{task_name}'. Details:\n{error_log}")
-                raise subprocess.CalledProcessError(process.returncode, cmd, stderr=error_log)
-        finally:
-            if not silent:
-                self.ui.finish()
+                for line in process.stderr:
+                    stderr_output.append(line)
+                    if total_duration_from_ffmpeg <= 0:
+                        duration_match = self.DURATION_PATTERN.search(line)
+                        if duration_match:
+                            h, m, s, hs = map(int, duration_match.groups())
+                            total_duration_from_ffmpeg = h * 3600 + m * 60 + s + hs / 100
+                    if 'time=' in line:
+                        match = self.TIME_PATTERN.search(line)
+                        if match:
+                            h, m, s, hs = map(int, match.groups())
+                            current_time = h * 3600 + m * 60 + s + hs / 100
+                            percent = min(100, (current_time / total_duration_from_ffmpeg) * 100) if total_duration_from_ffmpeg > 0 else 0
+                            pbar.n = int(percent)
+                            pbar.refresh()
+                
+                process.wait()
+                if process.returncode != 0:
+                    error_log = "".join(stderr_output)
+                    logging.error(f"FFmpeg Error during '{task_name}'. Details:\n{error_log}")
+                    raise subprocess.CalledProcessError(process.returncode, cmd, stderr=error_log)
+            except Exception as e:
+                logging.error(f"Error parsing FFmpeg output: {e}")
+                if process: process.kill()
+                raise
 
     def execute(self, cmd: List[str], task_name: str, total_duration: Optional[float] = None, silent: bool = False):
         """Menjalankan perintah FFmpeg dan menampilkan progress bar."""
@@ -238,7 +232,7 @@ class FFmpegWrapper:
         cmd.extend([*ffmpeg_args, '-y', str(output_path)])
 
         try:
-            self.execute(cmd, f"Memotong Klip: {output_path.name}", total_duration=duration, silent=silent)
+            self.execute(cmd, f"Processing: {output_path.name}", total_duration=duration, silent=silent)
             return output_path if output_path.exists() and output_path.stat().st_size > 1024 else None
         except Exception as e:
             logging.error(f"   ❌ Eksekusi FFmpeg gagal untuk klip '{title}': {e}")
@@ -253,13 +247,13 @@ class FFmpegWrapper:
             str(output_path)
         ]
         try:
-            self.execute(cmd, "Konversi Audio")
+            self.execute(cmd, "Konversi Audio", total_duration=None, silent=False)
             if output_path.exists() and output_path.stat().st_size > 1024: return output_path
         except Exception as e:
             logging.error(f"❌ Gagal konversi audio: {e}")
         return None
 
-    def render_with_effects(self, video_path: Path, audio_path: Path, subtitle_path: Optional[Path], output_path: Path, fonts_dir: Optional[Path] = None) -> bool:
+    def render_final_clip(self, video_path: Path, audio_path: Path, subtitle_path: Optional[Path], output_path: Path, fonts_dir: Optional[Path] = None) -> bool:
         """
         Merender video final dengan menggabungkan:
         1. Video hasil crop (OpenCV)
@@ -298,7 +292,7 @@ class FFmpegWrapper:
                 total_duration = float(subprocess.check_output(probe_cmd).decode('utf-8').strip())
             except Exception: pass
 
-            self.execute(cmd, f"Rendering: {output_path.name}", total_duration=total_duration)
+            self.execute(cmd, f"Rendering: {output_path.name}", total_duration=total_duration, silent=False)
             return True
         except Exception as e:
             logging.error(f"Gagal merender video: {e}", exc_info=True)

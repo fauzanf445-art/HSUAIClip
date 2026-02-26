@@ -3,21 +3,16 @@ import mediapipe as mp
 import numpy as np
 import os
 import logging
-import sys
 from typing import Optional, Deque
 from collections import deque
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from typing import List, Dict, Any
-
-# --- Configuration ---
-WINDOW_SIZE = 5
-PREDICTION_FRAMES = 3
-DRAW_EVERY_NTH = 20
+from typing import List, Dict, Any, Callable
 
 class MotionTracker:
-    def __init__(self, window_size: int = 5):
+    def __init__(self, window_size: int, prediction_frames: int):
         self.window_size = window_size
+        self.prediction_frames = prediction_frames
         # Perbaikan type hint untuk deque
         self.raw_history: Deque[np.ndarray] = deque(maxlen=window_size)
         
@@ -72,7 +67,7 @@ class MotionTracker:
         self.covariance = cov
 
         # 3. Future Prediction
-        k = PREDICTION_FRAMES
+        k = self.prediction_frames
         predicted_pos = state[:, :2] + (state[:, 2:] * k)
         
         return predicted_pos
@@ -80,6 +75,7 @@ class MotionTracker:
 class FaceTrackerProcessor:
     def __init__(self, model_path: str):
         self.model_path = model_path
+        # Parameters will be passed to create_tracked_video
 
     def visualize_results(self, image: np.ndarray, current_landmarks: Optional[np.ndarray], predicted_landmarks: Optional[np.ndarray]) -> np.ndarray:
         h, w, _ = image.shape
@@ -94,7 +90,8 @@ class FaceTrackerProcessor:
         if predicted_landmarks is not None:
             pred_px = (predicted_landmarks * np.array([w, h])).astype(np.int32)
             for i, pt in enumerate(pred_px):
-                if i % DRAW_EVERY_NTH == 0:
+                # This visualization is not active, but if it were, it should use a configurable value.
+                if i % 20 == 0: # Using a static value as this method is not part of the main rendering path.
                     center = (int(pt[0]), int(pt[1]))
                     cv2.circle(image, center, 2, (0, 0, 255), -1)
                     if curr_px is not None:
@@ -102,7 +99,7 @@ class FaceTrackerProcessor:
                         cv2.line(image, start_pt, center, (0, 0, 255), 1)
         return image
 
-    def create_tracked_video(self, input_path: str, output_path: str) -> Optional[Dict[str, Any]]:
+    def process_and_crop_video(self, input_path: str, output_path: str, window_size: int, prediction_frames: int, progress_callback: Optional[Callable[[int, int], None]] = None) -> Optional[Dict[str, Any]]:
         """
         Memproses video: Deteksi wajah -> Crop 9:16 -> Tulis Video Baru (Tanpa Audio).
         Menggantikan logika FFmpeg sendcmd untuk menghindari error filter.
@@ -121,7 +118,7 @@ class FaceTrackerProcessor:
             min_tracking_confidence=0.5
         )
 
-        tracker_logic = MotionTracker(window_size=WINDOW_SIZE)
+        tracker_logic = MotionTracker(window_size=window_size, prediction_frames=prediction_frames)
 
         try:
             with vision.FaceLandmarker.create_from_options(options) as landmarker:
@@ -179,13 +176,11 @@ class FaceTrackerProcessor:
                     out.write(cropped_frame)
 
                     if frame_count % 15 == 0:
-                        percent = int((frame_count / total_frames) * 100) if total_frames > 0 else 0
-                        sys.stdout.write(f"\r   ⏳ Processing Frames: {percent}% ({frame_count}/{total_frames})")
-                        sys.stdout.flush()
+                        if progress_callback:
+                            progress_callback(frame_count, total_frames)
 
                 cap.release()
                 out.release()
-                sys.stdout.write("\n")
                 
                 return {
                     "tracked_video": output_path,

@@ -45,12 +45,48 @@ class ProjectCore:
     _assets_verified = False
 
     def __init__(self):
-        self.paths = self._setup_paths()        
+        self.paths = self._setup_paths()
+        self.config = self._setup_config()
         self._setup_logging()
         self._create_folder_structure()
         self._register_bin_to_path()
         
         logging.debug("🚀 ProjectCore: Infrastruktur siap digunakan.")
+
+    def _setup_config(self) -> SimpleNamespace:
+        """
+        Mengkonfigurasi semua parameter dan nilai-nilai yang dapat disesuaikan.
+        """
+        # --- Motion Tracking ---
+        motion_tracking = {
+            "WINDOW_SIZE": 5,
+            "PREDICTION_FRAMES": 3,
+        }
+
+        # --- Captioning ---
+        captioning = {
+            "KARAOKE_CHUNK_SIZE": 3,
+            # Definisi model Whisper berdasarkan VRAM
+            "WHISPER_MODELS": {
+                "high_end": {"name": "large-v3", "vram_min": 10},
+                "mid_range": {"name": "medium", "vram_min": 4},
+                "low_end": {"name": "small", "vram_min": 0}, # Fallback
+            }
+        }
+
+        # --- File & Directory ---
+        # Nama folder, bukan path lengkap. Path lengkap dibuat di engine.
+        file_system = {
+            "DIR_RAWCLIPS": "rawclips",
+            "DIR_TRACKEDCLIPS": "tracked_clips",
+            "DIR_FINALCLIPS": "final_clips",
+        }
+        
+        return SimpleNamespace(
+            **motion_tracking,
+            **captioning,
+            **file_system
+        )
 
     def _get_base_path(self) -> Path:
         """Menentukan root directory project berdasarkan environment."""
