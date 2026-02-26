@@ -21,6 +21,7 @@ class ProcessingContext:
         self.tracking_results: List[Dict[str, Any]] = []
         self.subtitle_map: Dict[Path, Path] = {}
         self.final_clips: List[Path] = []
+        self.deno_path: Optional[str] = None
 
 class ProcessingStep:
     """

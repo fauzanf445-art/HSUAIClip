@@ -290,7 +290,8 @@ class FFmpegWrapper:
             try:
                 probe_cmd = ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', str(video_path)]
                 total_duration = float(subprocess.check_output(probe_cmd).decode('utf-8').strip())
-            except Exception: pass
+            except Exception as e:
+                logging.warning(f"Could not determine video duration with ffprobe for progress bar: {e}")
 
             self.execute(cmd, f"Rendering: {output_path.name}", total_duration=total_duration, silent=False)
             return True

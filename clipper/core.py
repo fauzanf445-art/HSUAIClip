@@ -57,6 +57,11 @@ class ProjectCore:
         """
         Mengkonfigurasi semua parameter dan nilai-nilai yang dapat disesuaikan.
         """
+        # --- AI Analysis ---
+        ai_analysis = {
+            "GEMINI_MODEL": "gemini-flash-latest",
+        }
+
         # --- Motion Tracking ---
         motion_tracking = {
             "WINDOW_SIZE": 5,
@@ -64,7 +69,7 @@ class ProjectCore:
         }
 
         # --- Captioning ---
-        captioning = {
+        captioning: dict[str, Any] = {
             "KARAOKE_CHUNK_SIZE": 3,
             # Definisi model Whisper berdasarkan VRAM
             "WHISPER_MODELS": {
@@ -84,6 +89,7 @@ class ProjectCore:
         
         return SimpleNamespace(
             **motion_tracking,
+            **ai_analysis,
             **captioning,
             **file_system
         )
@@ -237,7 +243,6 @@ class ProjectCore:
             deno_installed = self.find_executable("deno")
 
             if not deno_installed:
-                logging.info("📥 Deno tidak ditemukan. Menginstall via script official (curl | sh)...")
                 try:
                     subprocess.run("curl -fsSL https://deno.land/install.sh | sh", shell=True, check=True, capture_output=True)
 

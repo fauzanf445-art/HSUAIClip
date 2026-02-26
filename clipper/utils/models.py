@@ -1,5 +1,6 @@
 from dataclasses import dataclass
-from typing import List
+from typing import List, Any, Dict
+
 
 @dataclass
 class Clip:
@@ -14,7 +15,7 @@ class Clip:
     caption: str
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: Dict[str, Any]):
         return cls(
             title=data.get('title', 'Untitled'),
             start_time=float(data.get('start_time', 0.0)),
@@ -34,7 +35,7 @@ class VideoSummary:
     clips: List[Clip]
 
     @classmethod
-    def from_dict(cls, data: dict):
+    def from_dict(cls, data: Dict[str, Any]):
         clips = [Clip.from_dict(c) for c in data.get('clips', [])]
         return cls(
             video_title=data.get('video_title', 'Unknown Video'),

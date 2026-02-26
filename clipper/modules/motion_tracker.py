@@ -7,7 +7,7 @@ from typing import Optional, Deque
 from collections import deque
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from typing import List, Dict, Any, Callable
+from typing import Dict, Any, Callable
 
 class MotionTracker:
     def __init__(self, window_size: int, prediction_frames: int):

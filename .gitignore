@@ -17,4 +17,5 @@ debug.log*
 # Aset Besar & Binary (Agar repo tidak berat, user lain harus download sendiri sesuai README)
 models/
 *.exe
+bin/
 *.tflite

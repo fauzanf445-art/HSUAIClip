@@ -1,5 +1,4 @@
 import json
-from os import path
 import urllib.request
 import logging
 from pathlib import Path

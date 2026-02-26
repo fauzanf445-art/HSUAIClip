@@ -1,10 +1,8 @@
 import os
 import logging
 import torch
-import random
-from pathlib import Path
-from typing import List, Tuple, Optional, Any
 
+from typing import  Optional, Any
 from faster_whisper import WhisperModel
 
 class SubtitleGenerator:
