@@ -17,7 +17,7 @@ flatbuffers==24.3.25
 fonttools==4.51.0
 fsspec==2024.6.1
 google-auth==2.29.0
-google-genai==0.5.2
+google-genai
 h11==0.14.0
 hf-xet==0.2.0
 httpcore==1.0.5
