@@ -165,7 +165,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                     end_str = self.format_timestamp(line_end_time)
 
                     # Bangun teks untuk seluruh baris, dengan animasi per kata
-                    dialogue_text = "{\\blur3}" # Terapkan blur ke seluruh baris
+                    dialogue_parts = ["{\\blur3}"] # Terapkan blur ke seluruh baris
 
                     for word in chunk:
                         text = word.word.strip()
@@ -188,8 +188,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                                      f"\\t({jump_end_ms},{pop_end_ms},\\fscx115\\fscy115)"
                                      f"\\t({pop_end_ms},{settle_end_ms},\\fscx100\\fscy100)")
                         
-                        dialogue_text += f" {{{anim_tags}}}{text}"
+                        dialogue_parts.append(f" {{{anim_tags}}}{text}")
 
+                    dialogue_text = "".join(dialogue_parts)
                     # Tulis satu baris event untuk setiap kelompok kata
                     f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text.strip()}\n")
 
