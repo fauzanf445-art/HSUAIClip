@@ -2,9 +2,9 @@ import logging
 from pathlib import Path
 from typing import List
 
-from core import ProjectCore
-from pipeline import ProcessingContext, ProcessingPipeline
-from pipeline_steps import (
+from .core import ProjectCore
+from .pipeline import ProcessingContext, ProcessingPipeline
+from .pipeline_steps import (
     InitializationStep,
     SummarizationStep,
     ClipCreationStep,

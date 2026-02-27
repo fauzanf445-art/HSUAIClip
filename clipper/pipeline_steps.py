@@ -8,15 +8,15 @@ from typing import Optional, Dict, Any, List
 from tqdm import tqdm
 from dotenv import load_dotenv, set_key
 
-from pipeline import ProcessingStep, ProcessingContext
-from core import ProjectCore
-from interface import ConsoleUI
-from modules.downloader import Downloader
-from modules.ai_analyzer import AIAnalyzer
-from modules.motion_tracker import FaceTrackerProcessor
-from modules.subtitle_generator import SubtitleGenerator
-from utils import FFmpegWrapper
-from utils.models import VideoSummary, Clip
+from .pipeline import ProcessingStep, ProcessingContext
+from .core import ProjectCore
+from .interface import ConsoleUI
+from .modules.downloader import Downloader
+from .modules.ai_analyzer import AIAnalyzer
+from .modules.motion_tracker import FaceTrackerProcessor
+from .modules.subtitle_generator import SubtitleGenerator
+from .utils import FFmpegWrapper
+from .utils.models import VideoSummary, Clip
 
 # ==========================================
 # STEP 1: INITIALIZATION

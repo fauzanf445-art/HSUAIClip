@@ -3,8 +3,8 @@ import logging
 from typing import Any, List, Dict, Optional
 from pathlib import Path
 
-from core import ProjectCore
-from utils.models import Clip
+from .core import ProjectCore
+from .utils.models import Clip
 
 class ProcessingContext:
     """
