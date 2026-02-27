@@ -224,15 +224,15 @@ class Downloader:
         if self.video_info:
             # Cek apakah cache sudah berisi informasi stream yang memadai
             has_url = 'url' in self.video_info and self.video_info['url']
-            has_formats = 'requested_formats' in self.video_info
+            has_formats = 'requested_formats' in self.video_info and self.video_info['requested_formats']
             if has_url or has_formats:
-                logging.debug(f"♻️ Menggunakan metadata cache untuk URL stream '{clip_title}'...")
+                logging.debug(f"♻️ Menggunakan metadata cache untuk URL stream ({clip_title}).")
                 info_to_parse = self.video_info
 
         # Jika cache tidak cukup, ambil dari network
         if not info_to_parse:
             try:
-                logging.warning(f"⚠️ Cache URL tidak memadai untuk '{clip_title}'. Mengambil dari network...")
+                logging.info(f"🌍 Mengambil data stream lengkap dari YouTube untuk: {clip_title}...")
                 opts = self._get_base_opts()
                 opts['format'] = 'bestvideo+bestaudio/best'
                 with yt_dlp.YoutubeDL(cast(Any, opts)) as ydl:

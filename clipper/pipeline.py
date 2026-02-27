@@ -3,8 +3,8 @@ import logging
 from typing import Any, List, Dict, Optional
 from pathlib import Path
 
-from .core import ProjectCore
-from .utils.models import Clip
+from core import ProjectCore
+from utils.models import Clip
 
 class ProcessingContext:
     """
@@ -14,6 +14,7 @@ class ProcessingContext:
     def __init__(self, url: str, core: ProjectCore):
         self.url = url
         self.core = core
+        self.downloader: Optional[Any] = None
         self.work_dir: Optional[Path] = None
         self.video_info: Optional[Dict[str, Any]] = None
         self.clips_data: List[Clip] = []

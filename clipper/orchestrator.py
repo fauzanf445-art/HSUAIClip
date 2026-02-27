@@ -4,7 +4,7 @@ from typing import List
 
 from core import ProjectCore
 from pipeline import ProcessingContext, ProcessingPipeline
-from steps import (
+from pipeline_steps import (
     InitializationStep,
     SummarizationStep,
     ClipCreationStep,
@@ -13,25 +13,14 @@ from steps import (
     RenderingStep
 )
 
-class SetupEngine:
-    """
-    Engine untuk setup project (Folder, Aset, API Key) sebelum proses utama berjalan.
-    """
-    def __init__(self):
-        self.core = ProjectCore()
-        logging.debug("✅ Inisialisasi sistem logging berhasil. Debug log aktif.")
-        logging.info(f"📝 Debug Log: {self.core.paths.LOG_FILE}")
-
-    def run_system_check(self):
-        """Menjalankan verifikasi aset sistem (FFmpeg, Model, dll)."""
-        logging.info("⚙️ Menjalankan pemeriksaan sistem...")
-        self.core.verify_assets()
-
 def run_project(url: str) -> tuple[Path, List[Path]]:
-    # 1. Setup Engine: Verifikasi sistem dan aset
-    setup = SetupEngine()
-    setup.run_system_check()
-    core = setup.core
+    # 1. Setup Project Core & Verify Assets
+    core = ProjectCore()
+    logging.debug("✅ Inisialisasi sistem logging berhasil. Debug log aktif.")
+    logging.info(f"📝 Debug Log: {core.paths.LOG_FILE}")
+    
+    logging.info("⚙️ Menjalankan pemeriksaan sistem...")
+    core.verify_assets()
 
     # 2. Setup Pipeline
     context = ProcessingContext(url=url, core=core)
