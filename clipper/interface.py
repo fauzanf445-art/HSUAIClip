@@ -1,4 +1,5 @@
 import logging
+import re
 import getpass
 from pathlib import Path
 from typing import Optional, List
@@ -41,11 +42,14 @@ class ConsoleUI:
         url = input("\n👉 Masukkan URL YouTube: ").strip()
         if not url:
             print("❌ URL wajib diisi.")
-            return None
+            return url
         
-        if "youtube.com" not in url and "youtu.be" not in url:
+        # Regex sederhana untuk memvalidasi format URL YouTube/Shorts
+        youtube_regex = r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$'
+        
+        if not re.match(youtube_regex, url):
             print("❌ URL tidak valid. Harap masukkan link YouTube yang benar.")
-            return None
+            return url
             
         return url
 

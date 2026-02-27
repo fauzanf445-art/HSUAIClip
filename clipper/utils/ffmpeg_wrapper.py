@@ -268,11 +268,15 @@ class FFmpegWrapper:
             
             filter_chain = "[0:v]null[v_out]" # Default pass-through jika tidak ada subtitle
             if subtitle_path and subtitle_path.exists():
-                escaped_sub_path = subtitle_path.resolve().as_posix().replace(':', '\\:')
+                # Escape sequence untuk FFmpeg filter:
+                # 1. Backslash (\) -> \\
+                # 2. Kutip satu (') -> '\''
+                # 3. Titik dua (:) -> \:
+                escaped_sub_path = subtitle_path.resolve().as_posix().replace('\\', '\\\\').replace("'", "'\\''").replace(':', '\\:')
                 
                 fonts_opt = ""
                 if fonts_dir and fonts_dir.exists():
-                    escaped_fonts_dir = fonts_dir.resolve().as_posix().replace(':', '\\:')
+                    escaped_fonts_dir = fonts_dir.resolve().as_posix().replace('\\', '\\\\').replace("'", "'\\''").replace(':', '\\:')
                     fonts_opt = f":fontsdir='{escaped_fonts_dir}'"
 
                 filter_chain = f"[0:v]ass='{escaped_sub_path}'{fonts_opt}[v_out]"

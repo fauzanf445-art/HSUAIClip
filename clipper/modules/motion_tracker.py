@@ -53,6 +53,8 @@ class FaceTrackerProcessor:
         Menggantikan logika FFmpeg sendcmd untuk menghindari error filter.
         """
         tracker_logic = MotionTracker(window_size=window_size)
+        cap = None
+        out = None
 
         try:
             cap = cv2.VideoCapture(input_path)
@@ -112,9 +114,6 @@ class FaceTrackerProcessor:
                     if progress_callback:
                         progress_callback(frame_count, total_frames)
 
-            cap.release()
-            out.release()
-            
             return {
                 "tracked_video": output_path,
                 "width": target_w,
@@ -124,3 +123,6 @@ class FaceTrackerProcessor:
         except Exception as e:
             logging.error(f"Error during video processing: {e}", exc_info=True)
             return None
+        finally:
+            if cap: cap.release()
+            if out: out.release()
