@@ -27,7 +27,10 @@ class InitializationStep(ProcessingStep):
         
         # Find Deno once and store it in the context
         context.deno_path = context.core.find_executable('deno.exe') or context.core.find_executable('deno')
-        
+
+        if not context.deno_path:
+            logging.warning("⚠️ Deno tidak ditemukan. Beberapa ekstraktor yt-dlp mungkin gagal.")
+
         context.downloader = Downloader(context.url, cookies_path=context.core.paths.COOKIE_FILE, deno_path=context.deno_path)
         
         folder_name = context.downloader.get_folder_name()
@@ -223,7 +226,12 @@ class ClipCreationStep(ProcessingStep):
 
         ffmpeg_args = FFmpegWrapper.get_clip_creation_args()
         newly_created_files: List[Path] = []
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+
+        # Hitung jumlah worker optimal: 50% dari CPU core, minimal 1, maksimal 4
+        # Ini mencegah system freeze saat encoding berat, sekaligus menjaga limit sesi NVENC (biasanya max 3-5 pada GPU consumer)
+        optimal_workers = max(1, min(int((os.cpu_count() or 2) / 2), 4))
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=optimal_workers) as executor:
             future_to_task = {
                 executor.submit(self._process_single_clip, task, ffmpeg_args, stream_urls, silent=True): task
                 for task in tasks_to_run

@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.request
 import logging
 from pathlib import Path
@@ -21,9 +22,19 @@ class Downloader:
         Mencoba mengambil cookies dari berbagai browser secara otomatis.
         """        
         path_obj = Path(cookies_path)
-        if path_obj.exists():
+        if path_obj.exists() and path_obj.stat().st_size > 0:
             logging.debug(f"✅ File cookies ditemukan di: {path_obj}")
             return path_obj
+
+        # 1. Fallback: Cek Environment Variable (Solusi untuk Server/Headless)
+        if env_cookies := os.getenv("YOUTUBE_COOKIES"):
+            try:
+                logging.info("🍪 Menemukan cookies dari Environment Variable. Menyimpan ke file...")
+                path_obj.parent.mkdir(parents=True, exist_ok=True)
+                path_obj.write_text(env_cookies, encoding='utf-8')
+                return path_obj
+            except Exception as e:
+                logging.error(f"Gagal menyimpan cookies dari Env: {e}")
 
         supported_browsers = ["chrome", "firefox", "edge", "opera", "brave"]
         
@@ -42,7 +53,7 @@ class Downloader:
                     ydl.extract_info("https://www.youtube.com", download=False)
             except Exception as e:
                 # This is an expected failure if browser not installed or no cookies found
-                logging.debug(f"Gagal mengambil cookies dari {browser}: {e}")
+                logging.debug(f"Gagal mengambil cookies dari {browser} (Mungkin terkunci/tidak ada): {e}")
                 continue  # Try the next browser
 
             # If the above succeeded, check if the file was actually created and is not empty.
@@ -50,7 +61,8 @@ class Downloader:
                 logging.info(f"✅ File cookies berhasil dibuat dari {browser}: {path_obj}")
                 return path_obj  # Success! Stop checking and return the path.
         
-        logging.warning("⚠️ Tidak dapat membuat file cookies dari browser manapun.")
+        logging.warning("⚠️ Gagal mengekstrak cookies. YouTube mungkin memblokir akses (Sign-in Required).")
+        logging.warning("   👉 Solusi: Letakkan file 'cookies.txt' (Netscape format) di folder 'files/' secara manual.")
         return None
         
     def _get_base_opts(self) -> Dict[str, Any]:

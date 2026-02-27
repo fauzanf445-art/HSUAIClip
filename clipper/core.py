@@ -2,12 +2,7 @@ import logging
 import os
 import sys
 import urllib.request
-import zipfile
-import io
 import shutil
-import tarfile
-import stat
-import subprocess
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,29 +13,6 @@ class ProjectCore:
     Kelas inti untuk mengelola konfigurasi jalur dan pengaturan proyek.
     """
     MP_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-
-    DEPENDENCIES = {
-        "win32": [
-            {
-                "name": "FFmpeg",
-                "target_filename": "ffmpeg.exe",
-                "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-                "archive_path": "bin/ffmpeg.exe",
-            },
-            {
-                "name": "FFprobe",
-                "target_filename": "ffprobe.exe",
-                "url": "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
-                "archive_path": "bin/ffprobe.exe",
-            },
-            {
-                "name": "Deno",
-                "target_filename": "deno.exe",
-                "url": "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip",
-                "archive_path": "deno.exe",
-            }
-        ]
-    }
 
     _assets_verified = False
 
@@ -193,7 +165,7 @@ class ProjectCore:
             return
 
         self._verify_mediapipe_files(self.paths.FACE_LANDMARKER_FILE)
-        self._verify_dependencies()
+        self._verify_binaries()
         
         ProjectCore._assets_verified = True
 
@@ -209,120 +181,21 @@ class ProjectCore:
                 logging.error(f"❌ Gagal mengunduh model: {e}")
                 sys.exit(1)
 
-    def _verify_dependencies(self):
-        """Memeriksa dan mengunduh file eksekusi yang dibutuhkan seperti FFmpeg dan Deno."""
-        sys_platform = sys.platform
-
-        # 1. Khusus Linux/Mac: Install FFmpeg via PIP (static-ffmpeg)
-        if sys_platform in ["linux", "darwin"]:
-            if not (self.find_executable("ffmpeg") and self.find_executable("ffprobe")):
-                logging.info("📥 FFmpeg tidak ditemukan. Menginstall via pip (static-ffmpeg)...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", "static-ffmpeg"])
-                    import static_ffmpeg # type: ignore
-                    static_ffmpeg.add_paths()  # type: ignore
-                    logging.info("✅ FFmpeg & FFprobe berhasil diinstall via pip.")
-                except Exception as e:
-                    logging.error(f"❌ Gagal menginstall static-ffmpeg: {e}")
-
-            # 2. Install Deno via Shell Script (Official)
-            self._install_deno()
-
-        # 2. Dependensi Lain (Deno, atau FFmpeg Windows)
-        if sys_platform in self.DEPENDENCIES:
-            for dep in self.DEPENDENCIES[sys_platform]:
-                # Copy agar tidak mengubah atribut class secara permanen
-                current_dep = dep.copy()
-
-                self._download_and_setup_tool(current_dep)
-
-    def _install_deno(self):
-        """Instalasi Deno via shell script."""
-        if sys.platform in ["linux", "darwin"]:
-            # 2. Install Deno via Shell Script (Official)
-            deno_installed = self.find_executable("deno")
-
-            if not deno_installed:
-                try:
-                    subprocess.run("curl -fsSL https://deno.land/install.sh | sh", shell=True, check=True, capture_output=True)
-
-                    # Lokasi default installasi Deno (~/.deno/bin/deno)
-                    deno_home_bin = Path.home() / ".deno" / "bin" / "deno"
-                    target_link = self.paths.BASE_DIR / "deno"
-
-                    if deno_home_bin.exists():
-                        self._create_symlink_or_copy(deno_home_bin, target_link)
-                    else:
-                        logging.warning("⚠️ Deno terinstall tapi tidak ditemukan di ~/.deno/bin")
-                except Exception as e:
-                    logging.error(f"❌ Gagal menginstall Deno via script: {e}")
-
-    def _create_symlink_or_copy(self, deno_home_bin: Path, target_link: Path):
-        """Membuat symlink atau menyalin file, lalu mengatur permission execute."""
+    def _verify_binaries(self):
+        """Memastikan FFmpeg dan Deno terinstall secara manual."""
+        required_tools = ["ffmpeg", "ffprobe", "deno"]
+        missing = []
         
-        if not target_link.exists():
-            # Buat symlink/copy ke root project agar find_executable menemukannya
-            try:
-                os.symlink(deno_home_bin, target_link)
-            except OSError:
-                shutil.copy2(deno_home_bin, target_link)
-            
-            st = os.stat(target_link)
-            os.chmod(target_link, st.st_mode | stat.S_IEXEC)
-            logging.info(f"✅ Deno berhasil di-link ke: {target_link}")
-        return target_link
-
-    def _extract_archive(self, data: bytes, url: str, archive_path_suffix: str, target_path: Path):
-        """Mengekstrak file spesifik dari arsip ZIP atau TAR."""
-        file_obj = io.BytesIO(data)
+        for tool in required_tools:
+            # Cek tool (misal: ffmpeg) atau tool.exe untuk Windows
+            if not self.find_executable(tool) and not self.find_executable(tool + ".exe"):
+                missing.append(tool)
         
-        if url.endswith(".zip"):
-            with zipfile.ZipFile(file_obj) as z:
-                member = next((m for m in z.namelist() if m.endswith(archive_path_suffix)), None)
-                if not member:
-                    raise FileNotFoundError(f"'{archive_path_suffix}' tidak ditemukan dalam ZIP.")
-                with z.open(member) as source, open(target_path, "wb") as dest:
-                    shutil.copyfileobj(source, dest)
-                    
-        elif url.endswith(".tar.xz") or url.endswith(".tar.gz"):
-            with tarfile.open(fileobj=file_obj, mode="r:*") as t:
-                member = next((m for m in t.getmembers() if m.name.endswith(archive_path_suffix)), None)
-                if not member:
-                    raise FileNotFoundError(f"'{archive_path_suffix}' tidak ditemukan dalam TAR.")
-                
-                extracted_f = t.extractfile(member)
-                if extracted_f:
-                    with open(target_path, "wb") as dest:
-                        shutil.copyfileobj(extracted_f, dest)
-
-    def _download_and_setup_tool(self, dep_info: Dict[str, Any]) -> None:
-        try:
-            found_path = self.find_executable(str(dep_info["target_filename"]))
-            
-            if found_path:
-                logging.debug(f"✅ Dependensi '{dep_info['name']}' ditemukan: {found_path}")
-                return
-
-            logging.warning(f"📥 Dependensi '{dep_info['name']}' tidak ditemukan. Memulai unduhan...")
-            
-            base_dir = self.paths.BIN_DIR
-            target_path = base_dir / str(dep_info["target_filename"])
-            url = dep_info["url"]
-            archive_path_suffix = dep_info["archive_path"]
-
-            with urllib.request.urlopen(url) as response:
-                data = response.read()
-
-            self._extract_archive(data, url, archive_path_suffix, target_path)
-            
-            if os.name != 'nt':
-                st = os.stat(target_path)
-                os.chmod(target_path, st.st_mode | stat.S_IEXEC)
-
-            logging.info(f"✅ '{dep_info['name']}' berhasil di-setup di: {target_path.name}")
-        except Exception as e:
-            logging.error(f"❌ Gagal mengunduh/mengekstrak '{dep_info['name']}': {e}")
-            logging.warning(f"⚠️ Gagal setup '{dep_info['name']}'. Harap install manual jika terjadi error.")
+        if missing:
+            logging.error(f"❌ Tool berikut tidak ditemukan di PATH atau folder bin/: {', '.join(missing)}")
+            logging.error("   ⚠️  Aplikasi ini TIDAK lagi mengunduh dependensi secara otomatis demi keamanan.")
+            logging.error("   👉  Silakan baca README.md untuk panduan instalasi manual.")
+            sys.exit(1)
 
     @staticmethod
     def find_executable(name: str) -> Any: # Menggunakan Any atau Optional[str]

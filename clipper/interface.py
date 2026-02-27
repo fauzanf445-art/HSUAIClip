@@ -1,4 +1,5 @@
 import logging
+import getpass
 from pathlib import Path
 from typing import Optional, List
 
@@ -18,7 +19,7 @@ class ConsoleUI:
 
     @staticmethod
     def get_api_key_input() -> Optional[str]:
-        key = input("👉 Masukkan Gemini API Key: ").strip()
+        key = getpass.getpass("👉 Masukkan Gemini API Key (Input tersembunyi): ").strip()
         if not key:
             print("❌ API Key wajib diisi.")
             return None

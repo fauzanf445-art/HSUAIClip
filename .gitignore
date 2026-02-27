@@ -7,6 +7,7 @@ __pycache__/
 
 # Environment Variables (SANGAT PENTING: Agar API Key tidak bocor)
 *.env
+files/cookies.txt
 
 # Folder Output & Log Aplikasi
 Test/
