@@ -15,7 +15,7 @@ from .modules.downloader import Downloader
 from .modules.ai_analyzer import AIAnalyzer
 from .modules.motion_tracker import FaceTrackerProcessor
 from .modules.subtitle_generator import SubtitleGenerator
-from .utils import FFmpegWrapper
+from .utils.ffmpeg_wrapper import FFmpegWrapper
 from .utils.models import VideoSummary, Clip
 
 # ==========================================

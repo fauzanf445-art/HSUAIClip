@@ -6,7 +6,7 @@ import shutil
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Dict, Any
+from typing import Any
 
 class ProjectCore:
     """
