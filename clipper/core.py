@@ -3,6 +3,7 @@ import os
 import sys
 import urllib.request
 import shutil
+import subprocess
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -123,11 +124,19 @@ class ProjectCore:
                 p_path.mkdir(parents=True, exist_ok=True)
 
     def _register_bin_to_path(self):
-        """Menambahkan folder bin lokal ke PATH environment sementara."""
+        """Menambahkan folder bin lokal dan path Colab ke PATH environment."""
+        # 1. Add local bin directory
         bin_dir = str(self.paths.BIN_DIR.resolve())
         if bin_dir not in os.environ["PATH"]:
             os.environ["PATH"] = bin_dir + os.pathsep + os.environ["PATH"]
             logging.debug(f"🔗 Menambahkan {bin_dir} ke System PATH.")
+
+        # 2. Add Colab-specific Deno path if in Colab environment
+        if 'google.colab' in sys.modules:
+            colab_deno_path = "/root/.deno/bin"
+            if Path(colab_deno_path).exists() and colab_deno_path not in os.environ["PATH"]:
+                os.environ["PATH"] = colab_deno_path + os.pathsep + os.environ["PATH"]
+                logging.debug(f"🔗 Menambahkan path Deno Colab: {colab_deno_path}")
 
     def _setup_logging(self):
         """Mengaktifkan logging ke file debug.log dan konsol (INFO+)."""
@@ -193,7 +202,7 @@ class ProjectCore:
         
         if missing:
             logging.error(f"❌ Tool berikut tidak ditemukan di PATH atau folder bin/: {', '.join(missing)}")
-            logging.error("   ⚠️  Aplikasi ini TIDAK lagi mengunduh dependensi secara otomatis demi keamanan.")
+            logging.error("   ⚠️  Aplikasi ini TIDAK mengunduh dependensi secara otomatis demi keamanan.")
             logging.error("   👉  Silakan baca README.md untuk panduan instalasi manual.")
             sys.exit(1)
 
