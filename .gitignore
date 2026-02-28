@@ -1,5 +1,7 @@
 
 .venv/
+.vscode/
+.vscode/settings.json
 
 # Python Cache (File sampah otomatis Python)
 __pycache__/
@@ -7,7 +9,8 @@ __pycache__/
 
 # Environment Variables (SANGAT PENTING: Agar API Key tidak bocor)
 *.env
-files/cookies.txt
+.files/cookies.txt
+,files/.env
 
 # Folder Output & Log Aplikasi
 Test/
@@ -18,5 +21,4 @@ debug.log*
 # Aset Besar & Binary (Agar repo tidak berat, user lain harus download sendiri sesuai README)
 models/
 *.exe
-bin/
 *.tflite
