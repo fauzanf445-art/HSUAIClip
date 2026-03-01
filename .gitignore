@@ -9,7 +9,6 @@ __pycache__/
 
 # Environment Variables (SANGAT PENTING: Agar API Key tidak bocor)
 *.env
-files/
 files/cookies.txt
 files/.env
 
