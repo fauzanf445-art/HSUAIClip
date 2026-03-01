@@ -109,7 +109,7 @@ class ProjectCore:
         files = {
             "FACE_LANDMARKER_FILE": all_dirs["MEDIAPIPE_DIR"] / "face_landmarker.task",
             "ENV_FILE": all_dirs["FILE_DIR"] / ".env",
-            "PROMPT_FILE": all_dirs["FILE_DIR"] / "gemini_prompt.txt",
+            "PROMPT_FILE": BASE_DIR / "clipper" / "_files" / "gemini_prompt.txt",
             "LOG_FILE": all_dirs["TEMP_DIR"] / "debug.log",
             "COOKIE_FILE": all_dirs["FILE_DIR"] / "cookies.txt",
         }
