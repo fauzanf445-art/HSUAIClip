@@ -6,6 +6,14 @@ import numpy as np
 # It primarily covers the components needed for FaceLandmarker and uses
 # nested classes to simulate the library's module structure.
 
+# --- mediapipe.ImageFormat ---
+class ImageFormat(IntEnum):
+    SRGB = 1
+    SRGBA = 2
+    GRAY8 = 3
+    UNKNOWN = 0
+    SBGRA = 11
+
 # --- mediapipe.framework.formats.landmark_pb2 ---
 class NormalizedLandmark(NamedTuple):
     x: float
@@ -17,7 +25,7 @@ class NormalizedLandmark(NamedTuple):
 # --- mediapipe.Image ---
 class Image:
     """Represents an image for mediapipe tasks."""
-    def __init__(self, image_format: Any, data: np.ndarray) -> None: ...
+    def __init__(self, image_format: ImageFormat, data: np.ndarray) -> None: ...
     @staticmethod
     def create_from_file(file_name: str) -> 'Image': ...
     @staticmethod
@@ -45,31 +53,21 @@ class tasks:
     """Namespace for mediapipe tasks."""
     class python:
         """Namespace for Python tasks."""
-        class core:
-            class base_options:
-                class BaseOptions:
-                    """Base options for all tasks."""
-                    def __init__(
-                        self,
-                        model_asset_path: str,
-                        delegate: Any = None,
-                        model_asset_buffer: Optional[bytes] = None,
-                    ) -> None: ...
-            
-            class image_processing_options:
-                class ImageProcessingOptions: ...
-
-        # Alias for easier access, as seen in user code.
-        BaseOptions = core.base_options.BaseOptions
+        class BaseOptions:
+            """Base options for all tasks."""
+            def __init__(
+                self,
+                model_asset_path: str,
+                delegate: Any = None,
+                model_asset_buffer: Optional[bytes] = None,
+            ) -> None: ...
 
         class vision:
             """Namespace for vision tasks."""
-            class core:
-                class running_mode:
-                    class RunningMode(Enum):
-                        IMAGE = 1
-                        VIDEO = 2
-                        LIVE_STREAM = 3
+            class RunningMode(Enum):
+                IMAGE = 1
+                VIDEO = 2
+                LIVE_STREAM = 3
 
             class Blendshapes(IntEnum):
                 """The 52 blendshape coefficients."""
@@ -195,6 +193,3 @@ class tasks:
             class HandLandmarksConnections: ...
             class PoseLandmarksConnections: ...
             class InteractiveSegmenterRegionOfInterest: ...
-
-            # --- Top-level aliases from vision's __init__.py ---
-            RunningMode = core.running_mode.RunningMode

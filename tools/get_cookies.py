@@ -12,6 +12,10 @@ except ImportError:
     print("   Harap install dependencies terlebih dahulu dengan: pip install -r requirements.txt")
     sys.exit(1)
 
+# Tambahkan root project ke sys.path agar bisa import modul clipper
+sys.path.append(str(Path(__file__).parent.parent))
+from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
+
 # Konfigurasi Logging sederhana
 logging.basicConfig(
     level=logging.INFO,
@@ -32,42 +36,11 @@ def main():
     # Pastikan folder files ada
     cookies_file.parent.mkdir(parents=True, exist_ok=True)
 
-    supported_browsers = ["opera","chrome", "firefox", "edge", "brave"]
-    success = False
-
     print(f"📂 Target Output: {cookies_file}")
     print("⏳ Memulai ekstraksi...\n")
 
-    for browser in supported_browsers:
-        print(f"👉 Mencoba browser: {browser}...", end=" ")
-        
-        # Opsi yt-dlp untuk ekstrak cookies tanpa download
-        opts : Any = {
-            'cookiesfrombrowser': (browser,),
-            'cookiefile': str(cookies_file),
-            'quiet': False,
-            'no_warnings': False,
-            'verbose': False,
-            'skip_download': True,
-        }
-
-        try:
-            # Kita jalankan ekstraksi dummy ke YouTube untuk memicu pengambilan cookies
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                ydl.extract_info("https://www.youtube.com", download=False)
-            
-            # Cek apakah file berhasil dibuat dan ada isinya
-            if cookies_file.exists() and cookies_file.stat().st_size > 0:
-                print("✅ BERHASIL!")
-                success = True
-                break
-            else:
-                print("❌ Gagal (File kosong/tidak terbuat)")
-        
-        except Exception as e:
-            # Error biasanya terjadi jika browser tidak terinstall atau database terkunci
-            msg = str(e).split('\n')[0]
-            print(f"❌ Gagal ({msg})")
+    # Menggunakan logika terpusat dari Downloader
+    success = YouTubeAdapter.extract_cookies_from_browser(cookies_file)
 
     print("-" * 50)
     if success:

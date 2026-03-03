@@ -1,18 +1,18 @@
 import json
-import re
 import logging
 import time
+import re
+import uuid
 from pathlib import Path
-from typing import Optional, List, Any, Union, Dict
+from typing import Optional, List, Any, Union
 
 from google import genai
-from google.genai import types, errors
+from google.genai import types
 
-class AIAnalyzer:
-    """
-    Menganalisis transkrip dan audio dengan Gemini untuk menemukan klip potensial.
-    """
-    
+from src.domain.interfaces import IContentAnalyzer
+from src.domain.models import VideoSummary, Clip
+
+class GeminiAdapter(IContentAnalyzer):
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = f"models/{model_name}"
@@ -20,63 +20,59 @@ class AIAnalyzer:
 
     @staticmethod
     def check_key_validity(key: str) -> bool:
-        """Memeriksa apakah API Key valid dengan melakukan request ringan."""
+        """Memeriksa apakah API Key valid dengan request ringan."""
         try:
             client = genai.Client(api_key=key)
             next(iter(client.models.list(config={'page_size': 1})), None)
             return True
-        except Exception as e:
-            logging.error(f"Validasi API Key gagal: {e}")
+        except Exception:
             return False
 
     def _clean_json_text(self, text: str) -> str:
         """Membersihkan markdown code blocks dari string JSON."""
-        # Regex untuk menangkap konten di dalam ```json ... ``` atau ``` ... ```
         pattern = r"```(?:json)?\s*(.*?)\s*```"
         match = re.search(pattern, text.strip(), re.DOTALL)
         if match:
             return match.group(1)
         return text.strip()
 
-    def generate_summary(self, prompt_template: str, transcript_text: str, audio_file_path: Path) -> Dict[str, Any]:
+    def analyze_content(self, transcript: str, audio_path: str, prompt: str) -> VideoSummary:
         """
-        Memproses prompt, transkrip, dan file audio untuk menghasilkan ringkasan.
+        Menganalisis konten menggunakan Gemini dan mengembalikan objek domain VideoSummary.
+        Menggantikan logika generate_summary lama + from_dict.
         """
+        audio_file_path = Path(audio_path)
         uploaded_file: Optional[Any] = None
 
         try:
             # 1. Siapkan konten untuk API
-            content_parts: List[Union[str, Any]] = [prompt_template]
+            content_parts: List[Union[str, Any]] = [prompt]
+            if transcript:
+                content_parts.append(transcript)
 
-            # 2. Jika ada transkrip, tambahkan ke konten
-            if transcript_text:
-                content_parts.append(transcript_text)
-
-            # 2. Jika ada file audio, unggah dan tambahkan ke konten
-            if audio_file_path and audio_file_path.exists():
-                logging.info(f"Mengunggah file audio: {audio_file_path.name}...")
-
+            # 2. Upload Audio jika ada
+            if audio_file_path.exists():
+                logging.info(f"Mengunggah file audio ke Gemini: {audio_file_path.name}...")
                 with audio_file_path.open('rb') as audio_data:
                     uploaded_file = self.client.files.upload(
                         file=audio_data,
                         config={'mime_type': 'audio/wav'}
                     )
                 
-                # Tunggu proses indexing di server Google
+                # Tunggu proses indexing
                 start_wait = time.time()
                 while uploaded_file.state.name == "PROCESSING":
-                    if time.time() - start_wait > 600:  # Timeout ditingkatkan ke 10 menit
-                        raise TimeoutError("Timeout: Proses indexing audio di server Google memakan waktu terlalu lama (>10 menit).")
+                    if time.time() - start_wait > 600:
+                        raise TimeoutError("Timeout: Proses indexing audio di server Google terlalu lama.")
                     time.sleep(2)
                     uploaded_file = self.client.files.get(name=uploaded_file.name)
                 
                 if uploaded_file.state.name != "ACTIVE":
                     raise ValueError("Gagal mengunggah file audio ke server AI.")
-
+                
                 content_parts.append(uploaded_file)
 
-            # Definisi Schema untuk Structured Output
-            # Ini menjamin output JSON valid tanpa perlu parsing string manual
+            # 3. Definisi Schema (Structured Output)
             summary_schema = types.Schema(
                 type=types.Type.OBJECT,
                 properties={
@@ -104,7 +100,7 @@ class AIAnalyzer:
                 required=["video_title", "audio_energy_profile", "clips"]
             )
 
-            # 3. Kirim permintaan ke model AI dan minta output JSON
+            # 4. Request ke Gemini
             logging.debug("Mengirim permintaan multimodal ke Gemini...")
             response = self.client.models.generate_content(
                 model=self.model_name,
@@ -114,13 +110,23 @@ class AIAnalyzer:
                     response_schema=summary_schema
                 )
             )
-            
-            # Return parsed JSON object directly
-            clean_text = self._clean_json_text(str(response.text))
-            return json.loads(clean_text)
 
-        except errors.APIError as e:
-            logging.error(f"API Error: {e}")
+            # 5. Parse JSON dan Mapping ke Domain Models
+            clean_text = self._clean_json_text(str(response.text))
+            data = json.loads(clean_text)
+
+            clips_list = []
+            for c_data in data.get('clips', []):
+                clips_list.append(Clip.from_dict(c_data))
+
+            return VideoSummary(
+                video_title=data.get('video_title', 'Unknown Video'),
+                audio_energy_profile=data.get('audio_energy_profile', ''),
+                clips=clips_list
+            )
+
+        except Exception as e:
+            logging.error(f"Gemini Adapter Error: {e}")
             raise
 
         finally:
@@ -128,5 +134,5 @@ class AIAnalyzer:
                 try:
                     self.client.files.delete(name=uploaded_file.name)
                     logging.info(f"🗑️ File {uploaded_file.name} dibersihkan dari server.")
-                except Exception as e:
-                    logging.warning(f"⚠️ Gagal menghapus file sementara di server: {e}")
+                except Exception:
+                    pass
