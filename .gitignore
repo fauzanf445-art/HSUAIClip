@@ -13,7 +13,6 @@ files/cookies.txt
 files/.env
 
 # Folder Output & Log Aplikasi
-
 Temp/
 *.log
 debug.log*

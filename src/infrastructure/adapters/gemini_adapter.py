@@ -4,7 +4,7 @@ import time
 import re
 import uuid
 from pathlib import Path
-from typing import Optional, List, Any, Union
+from typing import Optional, List, Union
 
 from google import genai
 from google.genai import types
@@ -16,7 +16,7 @@ class GeminiAdapter(IContentAnalyzer):
     def __init__(self, api_key: str, model_name: str):
         self.api_key = api_key
         self.model_name = f"models/{model_name}"
-        self.client = genai.Client(api_key=self.api_key)
+        self.client: genai.Client = genai.Client(api_key=self.api_key)
 
     @staticmethod
     def check_key_validity(key: str) -> bool:
@@ -36,41 +36,57 @@ class GeminiAdapter(IContentAnalyzer):
             return match.group(1)
         return text.strip()
 
+    def _upload_and_process_audio(self, audio_path: Path) -> types.File:
+        """
+        Mengunggah file audio ke server Gemini dan menunggu hingga statusnya 'ACTIVE'.
+
+        Raises:
+            TimeoutError: Jika proses indexing melebihi batas waktu.
+            ValueError: Jika file gagal diproses dan statusnya bukan 'ACTIVE'.
+        """
+        logging.info(f"Mengunggah file audio ke Gemini: {audio_path.name}...")
+        uploaded_file = self.client.files.upload(
+            file=audio_path, # SDK terbaru mendukung argumen 'path' secara langsung
+            config=types.UploadFileConfig(
+                display_name=audio_path.name,
+                mime_type='audio/wav'
+            )
+        )
+        
+        # Tunggu proses indexing
+        start_wait = time.time()
+        while uploaded_file.state == "PROCESSING":
+
+            if time.time() - start_wait > 600: 
+                raise TimeoutError("Timeout: Proses indexing audio terlalu lama.")
+            time.sleep(2)
+            if not uploaded_file.name:
+                raise ValueError("File name is missing during processing")
+            uploaded_file = self.client.files.get(name=uploaded_file.name)
+        
+        if uploaded_file.state != "ACTIVE":
+            raise ValueError(f"Gagal memproses audio. Status: {uploaded_file.state}")
+        
+        logging.info(f"✅ Audio {uploaded_file.name} berhasil diproses.")
+        return uploaded_file
+
     def analyze_content(self, transcript: str, audio_path: str, prompt: str) -> VideoSummary:
         """
         Menganalisis konten menggunakan Gemini dan mengembalikan objek domain VideoSummary.
-        Menggantikan logika generate_summary lama + from_dict.
         """
         audio_file_path = Path(audio_path)
-        uploaded_file: Optional[Any] = None
+        uploaded_file: Optional[types.File] = None
 
         try:
-            # 1. Siapkan konten untuk API
-            content_parts: List[Union[str, Any]] = [prompt]
-            if transcript:
-                content_parts.append(transcript)
+            request_parts: List[types.Part] = []
 
             # 2. Upload Audio jika ada
             if audio_file_path.exists():
-                logging.info(f"Mengunggah file audio ke Gemini: {audio_file_path.name}...")
-                with audio_file_path.open('rb') as audio_data:
-                    uploaded_file = self.client.files.upload(
-                        file=audio_data,
-                        config={'mime_type': 'audio/wav'}
-                    )
-                
-                # Tunggu proses indexing
-                start_wait = time.time()
-                while uploaded_file.state.name == "PROCESSING":
-                    if time.time() - start_wait > 600:
-                        raise TimeoutError("Timeout: Proses indexing audio di server Google terlalu lama.")
-                    time.sleep(2)
-                    uploaded_file = self.client.files.get(name=uploaded_file.name)
-                
-                if uploaded_file.state.name != "ACTIVE":
-                    raise ValueError("Gagal mengunggah file audio ke server AI.")
-                
-                content_parts.append(uploaded_file)
+                uploaded_file = self._upload_and_process_audio(audio_file_path)
+            if transcript:
+                request_parts.append(types.Part.from_text(text=transcript))
+
+            request_parts.append(types.Part.from_text(text=f"Instruction:\n{prompt}"))
 
             # 3. Definisi Schema (Structured Output)
             summary_schema = types.Schema(
@@ -102,9 +118,13 @@ class GeminiAdapter(IContentAnalyzer):
 
             # 4. Request ke Gemini
             logging.debug("Mengirim permintaan multimodal ke Gemini...")
-            response = self.client.models.generate_content(
+            contents = types.Content(
+                role="user",
+                parts=request_parts)
+            
+            response: types.GenerateContentResponse = self.client.models.generate_content(
                 model=self.model_name,
-                contents=content_parts,
+                contents=contents,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=summary_schema
@@ -131,7 +151,10 @@ class GeminiAdapter(IContentAnalyzer):
 
         finally:
             if uploaded_file:
+                
                 try:
+                    if not uploaded_file.name:
+                        raise ValueError("File name is missing during processing")
                     self.client.files.delete(name=uploaded_file.name)
                     logging.info(f"🗑️ File {uploaded_file.name} dibersihkan dari server.")
                 except Exception:

@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 from typing import List, Optional
 import uuid
 from typing import Dict, Any
@@ -43,6 +43,10 @@ class Clip:
             tracked_path=data.get('tracked_path'),
             final_path=data.get('final_path')
         )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Mengonversi instance Clip ke dictionary untuk serialisasi."""
+        return asdict(self)
 
 @dataclass
 class VideoSummary:

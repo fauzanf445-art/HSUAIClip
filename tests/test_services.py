@@ -180,8 +180,9 @@ class TestOrchestrator(unittest.TestCase):
     def test_get_clips_for_processing_manual_mode(self):
         """Test getting clips when user provides manual timestamps."""
         # Arrange
-        manual_clips = [Clip(id="manual_1", title="Manual", start_time=0, end_time=10, duration=10, energy_score=0, vocal_energy="", audio_justification="", description="", caption="")]
-        self.mock_ui.get_manual_clips.return_value = manual_clips
+        # UI now returns a simple dictionary, not a domain object.
+        manual_timestamps = [{'start_time': 0, 'end_time': 10}]
+        self.mock_ui.get_manual_clips.return_value = manual_timestamps
         
         # Act
         result_clips = self.orchestrator._get_clips_for_processing("http://test.url", Path("/tmp/work"))
@@ -189,11 +190,18 @@ class TestOrchestrator(unittest.TestCase):
         # Assert
         self.mock_ui.show_step.assert_called_once_with("Analisis Konten")
         self.mock_ui.get_manual_clips.assert_called_once()
-        self.mock_ui.log.assert_called_with(f"Mode manual: {len(manual_clips)} klip akan diproses.")
+        self.mock_ui.log.assert_called_with(f"Mode manual: {len(manual_timestamps)} klip akan diproses.")
         # Ensure AI path is not taken
         self.mock_media_service.get_transcript.assert_not_called()
         self.mock_analysis_service.analyze_video.assert_not_called()
-        self.assertEqual(result_clips, manual_clips)
+        
+        # Verify that the orchestrator correctly created the Clip object
+        self.assertEqual(len(result_clips), 1)
+        created_clip = result_clips[0]
+        self.assertEqual(created_clip.start_time, 0)
+        self.assertEqual(created_clip.end_time, 10)
+        self.assertEqual(created_clip.duration, 10)
+        self.assertEqual(created_clip.title, "Manual Clip 1")
 
     def test_get_clips_for_processing_ai_mode(self):
         """Test getting clips using the AI analysis path."""

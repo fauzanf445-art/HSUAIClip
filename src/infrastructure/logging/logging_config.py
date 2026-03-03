@@ -1,5 +1,5 @@
 """
-src/infrastructure/logging_config.py
+src/infrastructure/logging/logging_config.py
 Konfigurasi logging terpusat untuk HSUAIClip.
 """
 import logging
@@ -12,7 +12,7 @@ class TqdmLoggingHandler(logging.Handler):
     Custom Logging Handler yang menggunakan tqdm.write() 
     agar output log tidak merusak tampilan progress bar yang sedang berjalan.
     """
-    def emit(self, record):
+    def emit(self, record: logging.LogRecord):
         try:
             msg = self.format(record)
             tqdm.write(msg)

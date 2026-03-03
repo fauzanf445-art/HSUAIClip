@@ -1,10 +1,9 @@
 import logging
 import json
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
-from src.domain.interfaces import ITranscriber
-from src.infrastructure.io.subtitle_writer import AssSubtitleWriter
+from src.domain.interfaces import ITranscriber, ISubtitleWriter, TranscriptionSegment
 
 class CaptioningService:
     """
@@ -12,12 +11,13 @@ class CaptioningService:
     Mengorkestrasi transkripsi (Whisper) dan penulisan file (ASS).
     """
 
-    def __init__(self, transcriber: ITranscriber):
+    def __init__(self, transcriber: ITranscriber, writer: ISubtitleWriter):
         self.transcriber = transcriber
-        # Penulis subtitle adalah detail implementasi I/O, jadi kita bisa buat instance langsung di sini
-        self.writer = AssSubtitleWriter()
+        # Dependency Inversion: Service ini bergantung pada abstraksi (ISubtitleWriter),
+        # bukan pada implementasi konkret.
+        self.writer = writer
 
-    def _get_transcription_data(self, audio_path: str, cache_path: Path) -> Optional[List[Dict[str, Any]]]:
+    def _get_transcription_data(self, audio_path: str, cache_path: Path) -> Optional[List[TranscriptionSegment]]:
         """
         Mendapatkan data transkripsi, menggunakan cache jika tersedia.
         """

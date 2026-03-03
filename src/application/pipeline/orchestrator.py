@@ -14,6 +14,7 @@ from src.application.services.captioning_service import CaptioningService
 from src.config.settings import AppConfig
 from src.infrastructure.ui.console import ConsoleUI
 from src.domain.models import Clip
+from src.domain.interfaces import TrackResult
 
 class Orchestrator:
     """
@@ -51,11 +52,27 @@ class Orchestrator:
         """Mendapatkan daftar klip, baik dari input manual atau analisis AI."""
         self.ui.show_step("Analisis Konten")
         
-        clips: List[Clip] = self.ui.get_manual_clips() or []
-        if clips:
-            self.ui.log(f"Mode manual: {len(clips)} klip akan diproses.")
+        manual_timestamps = self.ui.get_manual_clips()
+        if manual_timestamps:
+            self.ui.log(f"Mode manual: {len(manual_timestamps)} klip akan diproses.")
+            clips = []
+            for i, ts in enumerate(manual_timestamps):
+                start = ts['start_time']
+                end = ts['end_time']
+                clips.append(Clip(
+                    id=f"manual_{i}",
+                    title=f"Manual Clip {i+1}",
+                    start_time=start,
+                    end_time=end,
+                    duration=end - start,
+                    energy_score=0,
+                    vocal_energy="N/A",
+                    audio_justification="Manual",
+                    description="Manual timestamp",
+                    caption=""
+                ))
             return clips
-
+ 
         self.ui.log("Mode AI: Menganalisis video untuk klip potensial...")
         transcript = self.media.get_transcript(url)
         
@@ -92,11 +109,11 @@ class Orchestrator:
         self.ui.log(f"{len(created_clip_paths)} dari {len(clips)} klip berhasil dipotong.")
         return created_clip_paths
 
-    def _track_clips(self, raw_clip_paths: List[Path], work_dir: Path) -> list:
+    def _track_clips(self, raw_clip_paths: List[Path], work_dir: Path) -> List[Tuple[Path, TrackResult]]:
         """Menjalankan motion tracking pada setiap klip mentah."""
         self.ui.show_step("Motion Tracking (MediaPipe)")
         tracked_dir = work_dir / "tracked_clips"
-        tracked_results = []
+        tracked_results: List[Tuple[Path, TrackResult]] = []
         
         # Outer progress bar untuk setiap klip
         for clip_path in tqdm(raw_clip_paths, desc="Overall Tracking", unit="clip"):
@@ -121,7 +138,7 @@ class Orchestrator:
 
         return tracked_results
 
-    def _render_final_clips(self, tracked_results: list, work_dir: Path, safe_name: str) -> List[Path]:
+    def _render_final_clips(self, tracked_results: List[Tuple[Path, TrackResult]], work_dir: Path, safe_name: str) -> List[Path]:
         """Membuat subtitle dan merender video final."""
         self.ui.show_step("Captioning & Rendering Final")
         final_dir = self.config.paths.OUTPUT_DIR / safe_name

@@ -62,29 +62,13 @@ class AnalysisService:
     def _save_to_cache(self, summary: VideoSummary, path: str):
         """Helper internal untuk menyimpan Domain Model ke JSON."""
         try:
-            # Konversi Domain Model ke Dictionary (Manual Mapping)
-            # Kita tidak menggunakan from_dict/to_dict di Domain agar Domain tetap murni.
+            # Konversi Domain Model ke Dictionary menggunakan metode to_dict()
+            # Ini menghilangkan duplikasi logika dan mematuhi prinsip DRY.
             data = {
                 "video_title": summary.video_title,
                 "audio_energy_profile": summary.audio_energy_profile,
-                "clips": [
-                    {
-                        "id": c.id,
-                        "title": c.title,
-                        "start_time": c.start_time,
-                        "end_time": c.end_time,
-                        "duration": c.duration,
-                        "energy_score": c.energy_score,
-                        "vocal_energy": c.vocal_energy,
-                        "audio_justification": c.audio_justification,
-                        "description": c.description,
-                        "caption": c.caption,
-                        "raw_path": c.raw_path,
-                        "tracked_path": c.tracked_path,
-                        "final_path": c.final_path
-                    }
-                    for c in summary.clips
-                ]
+                # Setiap objek Clip sekarang bertanggung jawab atas serialisasinya sendiri.
+                "clips": [c.to_dict() for c in summary.clips]
             }
             
             Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')

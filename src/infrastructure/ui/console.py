@@ -1,11 +1,8 @@
 import logging
 import getpass
 import re
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pathlib import Path
-from tqdm import tqdm
-
-from src.domain.models import Clip
 
 class ConsoleUI:
     """Antarmuka Pengguna berbasis Terminal."""
@@ -35,8 +32,11 @@ class ConsoleUI:
                 continue
             return url
 
-    def get_manual_clips(self) -> Optional[List[Clip]]:
-        """Meminta input timestamp manual (opsional)."""
+    def get_manual_clips(self) -> Optional[List[Dict[str, float]]]:
+        """
+        Meminta input timestamp manual (opsional).
+        Mengembalikan list of dictionaries, bukan objek domain.
+        """
         print("\n👉 (Opsional) Mode Manual: Masukkan timestamp (detik).")
         print("   Format: start-end, start-end (Contoh: 60-90, 120-150)")
         user_input = input("   [Tekan Enter untuk Analisis AI Otomatis]: ").strip()
@@ -44,21 +44,15 @@ class ConsoleUI:
         if not user_input:
             return None
             
-        clips = []
+        timestamps = []
         try:
             for part in user_input.split(','):
                 if '-' not in part: continue
                 s, e = map(float, part.split('-'))
                 if s >= e: continue
                 
-                clips.append(Clip(
-                    id=f"manual_{len(clips)}",
-                    title=f"Manual Clip {len(clips)+1}",
-                    start_time=s, end_time=e, duration=e-s,
-                    energy_score=0, vocal_energy="N/A", audio_justification="Manual",
-                    description="Manual timestamp", caption=""
-                ))
-            return clips if clips else None
+                timestamps.append({'start_time': s, 'end_time': e})
+            return timestamps if timestamps else None
         except ValueError:
             print("❌ Format salah. Menggunakan mode AI.")
             return None

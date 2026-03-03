@@ -1,10 +1,9 @@
 import logging
 import torch
-from typing import List, Dict, Any, Optional
+from typing import List, Optional, Dict
+from faster_whisper import WhisperModel, Segment
 
-from faster_whisper import WhisperModel
-
-from src.domain.interfaces import ITranscriber
+from src.domain.interfaces import ITranscriber, TranscriptionSegment, TranscriptionWord
 
 class WhisperAdapter(ITranscriber):
     """
@@ -59,12 +58,22 @@ class WhisperAdapter(ITranscriber):
             logging.warning(f"⚠️ Gagal mendeteksi GPU (Torch error: {e}). Default ke CPU.")
             return {'model_size': 'small', 'device': 'cpu', 'compute_type': 'int8'}
 
-    def _segment_to_dict(self, segment: Any) -> Dict[str, Any]:
+    def _segment_to_dict(self, segment: Segment) -> TranscriptionSegment:
         """Mengubah objek Segment dari faster-whisper menjadi dictionary."""
-        words_list = [{'word': w.word, 'start': w.start, 'end': w.end, 'probability': w.probability} for w in segment.words] if segment.words else []
-        return {"start": segment.start, "end": segment.end, "text": segment.text, "words": words_list}
+        words_list: List[TranscriptionWord] = []
+        if segment.words:
+            for w in segment.words:
+                words_list.append({
+                    'word': w.word,
+                    'start': w.start,
+                    'end': w.end,
+                    'probability': w.probability
+                })
+        return {
+            "start": segment.start, "end": segment.end, "text": segment.text, "words": words_list
+        }
 
-    def transcribe(self, audio_path: str) -> List[Dict[str, Any]]:
+    def transcribe(self, audio_path: str) -> List[TranscriptionSegment]:
         """
         Mentranskripsi file audio dan mengembalikan hasilnya sebagai list of dictionaries.
         """

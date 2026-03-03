@@ -5,9 +5,9 @@ from mediapipe.tasks.python import vision
 import numpy as np
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Callable, List
+from typing import Optional, Callable, List
 
-from src.domain.interfaces import IFaceTracker
+from src.domain.interfaces import IFaceTracker, TrackResult
 
 class MediaPipeAdapter(IFaceTracker):
     """
@@ -22,7 +22,7 @@ class MediaPipeAdapter(IFaceTracker):
         if not Path(model_path).exists():
             logging.warning(f"⚠️ Model MediaPipe tidak ditemukan di: {model_path}")
 
-    def track_and_crop(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> Dict[str, Any]:
+    def track_and_crop(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> TrackResult:
         """
         Melakukan tracking wajah dan cropping vertikal (9:16).
         """

@@ -2,10 +2,11 @@ import os
 import logging
 from dotenv import load_dotenv
 
+
 # Config & UI
 from src.config.settings import AppConfig
 from src.infrastructure.ui.console import ConsoleUI
-from src.infrastructure.logging_config import setup_logging
+from src.infrastructure.logging.logging_config import setup_logging
 
 # Adapters
 from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
@@ -13,6 +14,7 @@ from src.infrastructure.adapters.ffmpeg_adapter import FFmpegAdapter
 from src.infrastructure.adapters.gemini_adapter import GeminiAdapter
 from src.infrastructure.adapters.whisper_adapter import WhisperAdapter
 from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
+from src.infrastructure.io.subtitle_writer import AssSubtitleWriter
 
 # Services
 from src.application.services.media_service import MediaService
@@ -24,10 +26,25 @@ from src.application.services.captioning_service import CaptioningService
 # Pipeline
 from src.application.pipeline.orchestrator import Orchestrator
 
+def setup_environment(config: AppConfig):
+    """
+    Mempersiapkan lingkungan eksekusi: membuat folder yang diperlukan
+    dan mendaftarkan direktori binary ke PATH sistem.
+    """
+    # 1. Membuat semua direktori yang diperlukan
+    for path in [config.paths.TEMP_DIR, config.paths.OUTPUT_DIR, config.paths.MODELS_DIR, 
+                 config.paths.FILES_DIR, config.paths.WHISPER_MODELS_DIR, config.paths.MEDIAPIPE_DIR, config.paths.LOGS_DIR]:
+        path.mkdir(parents=True, exist_ok=True)
+
+    # 2. Menambahkan folder bin ke PATH agar FFmpeg dapat ditemukan
+    bin_path = str(config.paths.BIN_DIR.resolve())
+    if bin_path not in os.environ["PATH"]:
+        os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+
 def main():
     # 1. Setup Dasar
     config = AppConfig()
-    
+    setup_environment(config)
     # Inisialisasi Logging (File + Console TQDM)
     setup_logging(config.paths.LOG_FILE)
     
@@ -56,12 +73,14 @@ def main():
         
         mp_adapter = MediaPipeAdapter(model_path=str(config.paths.FACE_LANDMARKER_FILE), window_size=config.motion_window_size)
 
+        subtitle_writer_adapter = AssSubtitleWriter()
+
         # 4. Inisialisasi Services (Application Layer)
         media_service = MediaService(downloader=yt_adapter)
         audio_service = AudioService(downloader=yt_adapter, processor=ffmpeg_adapter)
         analysis_service = AnalysisService(analyzer=gemini_adapter)
         video_service = VideoService(processor=ffmpeg_adapter, tracker=mp_adapter)
-        captioning_service = CaptioningService(transcriber=whisper_adapter)
+        captioning_service = CaptioningService(transcriber=whisper_adapter, writer=subtitle_writer_adapter)
 
         # 5. Jalankan Orchestrator
         orchestrator = Orchestrator(config, ui, media_service, audio_service, analysis_service, video_service, captioning_service)

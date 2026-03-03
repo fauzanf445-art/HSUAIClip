@@ -1,8 +1,10 @@
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import List
 
-class AssSubtitleWriter:
+from src.domain.interfaces import ISubtitleWriter, TranscriptionSegment
+
+class AssSubtitleWriter(ISubtitleWriter):
     """
     Bertanggung jawab untuk menulis data transkripsi ke dalam format file .ass
     dengan efek karaoke.
@@ -41,12 +43,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     def write_karaoke_subtitles(
         self, 
-        transcription_data: List[Dict[str, Any]], 
+        transcription_data: List[TranscriptionSegment], 
         output_path: str, 
         chunk_size: int, 
         play_res_x: int, 
         play_res_y: int
-    ):
+    ) -> None:
         """Mengambil data transkripsi terstruktur dan menuliskannya ke file .ass."""
         all_words = [word for segment in transcription_data for word in segment.get('words', [])]
         

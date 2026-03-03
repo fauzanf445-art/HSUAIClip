@@ -16,6 +16,7 @@ from src.infrastructure.adapters.ffmpeg_adapter import FFmpegAdapter
 from src.infrastructure.adapters.gemini_adapter import GeminiAdapter
 from src.infrastructure.adapters.whisper_adapter import WhisperAdapter
 from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
+from src.infrastructure.io.subtitle_writer import AssSubtitleWriter
 
 # Services
 from src.application.services.media_service import MediaService
@@ -48,6 +49,20 @@ class TestFullPipeline(unittest.TestCase):
         logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
         
         cls.config = AppConfig()
+
+        # Replikasi setup environment yang sekarang ada di main.py
+        # untuk memastikan test berjalan dalam kondisi yang sama.
+        paths_to_create = [
+            cls.config.paths.TEMP_DIR, cls.config.paths.OUTPUT_DIR, cls.config.paths.MODELS_DIR,
+            cls.config.paths.FILES_DIR, cls.config.paths.WHISPER_MODELS_DIR,
+            cls.config.paths.MEDIAPIPE_DIR, cls.config.paths.LOGS_DIR
+        ]
+        for path in paths_to_create:
+            path.mkdir(parents=True, exist_ok=True)
+        bin_path = str(cls.config.paths.BIN_DIR.resolve())
+        if bin_path not in os.environ["PATH"]:
+            os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
+
         cls.ui = ConsoleUI() # Kita tetap butuh instance-nya, meski tidak akan menampilkan ke user
 
         # Hapus output lama sebelum memulai
@@ -64,11 +79,12 @@ class TestFullPipeline(unittest.TestCase):
         
         mp_adapter = MediaPipeAdapter(model_path=str(cls.config.paths.FACE_LANDMARKER_FILE), window_size=cls.config.motion_window_size)
 
+        subtitle_writer = AssSubtitleWriter()
         media_service = MediaService(downloader=yt_adapter)
         audio_service = AudioService(downloader=yt_adapter, processor=ffmpeg_adapter)
         analysis_service = AnalysisService(analyzer=gemini_adapter)
         video_service = VideoService(processor=ffmpeg_adapter, tracker=mp_adapter)
-        captioning_service = CaptioningService(transcriber=whisper_adapter)
+        captioning_service = CaptioningService(transcriber=whisper_adapter, writer=subtitle_writer)
 
         # Buat Orchestrator yang akan diuji
         cls.orchestrator = Orchestrator(
@@ -93,13 +109,12 @@ class TestFullPipeline(unittest.TestCase):
         untuk mempercepat proses (menghindari panggilan AI yang mahal dan lama).
         """
         # Arrange
-        # Kita "memalsukan" input pengguna untuk mode manual
+        # Kita "memalsukan" input pengguna untuk mode manual.
+        # UI sekarang mengembalikan dictionary, bukan objek Clip.
         with patch.object(self.ui, 'get_manual_clips') as mock_get_manual:
-            # Mock get_manual_clips untuk mengembalikan satu klip sederhana
             # Ini akan memotong video dari detik ke-2 hingga ke-7
-            from src.domain.models import Clip
-            manual_clip = Clip(id="test01", title="Test Clip", start_time=2.0, end_time=7.0, duration=5.0, energy_score=0, vocal_energy="", audio_justification="", description="", caption="")
-            mock_get_manual.return_value = [manual_clip]
+            manual_timestamps = [{'start_time': 2.0, 'end_time': 7.0}]
+            mock_get_manual.return_value = manual_timestamps
 
             # Act
             self.orchestrator.run(TEST_URL)

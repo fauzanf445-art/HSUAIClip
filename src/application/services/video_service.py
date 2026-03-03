@@ -1,10 +1,10 @@
 import logging
 import concurrent.futures
 from pathlib import Path
-from typing import List, Optional, Dict, Any, Callable
+from typing import List, Optional, Callable
 from tqdm import tqdm
 
-from src.domain.interfaces import IVideoProcessor, IFaceTracker
+from src.domain.interfaces import IVideoProcessor, IFaceTracker, TrackResult
 from src.domain.models import Clip
 
 class VideoService:
@@ -66,7 +66,7 @@ class VideoService:
 
         return sorted(created_files, key=lambda p: p.name)
 
-    def track_subject(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> Dict[str, Any]:
+    def track_subject(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> TrackResult:
         """
         Menjalankan motion tracking pada video input.
         """

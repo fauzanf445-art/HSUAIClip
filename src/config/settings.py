@@ -46,7 +46,7 @@ class AppPaths:
         
         self.ENV_FILE = self.FILES_DIR / ".env"
         self.COOKIE_FILE = self.FILES_DIR / "cookies.txt"
-        self.PROMPT_FILE = self.BASE_DIR / "src" / "config" / "gemini_prompt.txt"
+        self.PROMPT_FILE = self.BASE_DIR / "src" / "assets" / "prompts" / "gemini_prompt.txt"
         self.FACE_LANDMARKER_FILE = self.MEDIAPIPE_DIR / "face_landmarker.task"
 
 @dataclass
@@ -67,22 +67,6 @@ class AppConfig:
     whisper_model_size: str = "small" 
     whisper_device: str = "cpu"
     whisper_compute_type: str = "int8"
-
-    def __post_init__(self):
-        self._setup_folders()
-        self._register_binaries()
-
-    def _setup_folders(self):
-        """Membuat folder yang diperlukan jika belum ada."""
-        for path in [self.paths.TEMP_DIR, self.paths.OUTPUT_DIR, self.paths.MODELS_DIR, 
-                     self.paths.FILES_DIR, self.paths.WHISPER_MODELS_DIR, self.paths.MEDIAPIPE_DIR, self.paths.LOGS_DIR]:
-            path.mkdir(parents=True, exist_ok=True)
-
-    def _register_binaries(self):
-        """Menambahkan folder bin ke PATH."""
-        bin_path = str(self.paths.BIN_DIR.resolve())
-        if bin_path not in os.environ["PATH"]:
-            os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
 
     def get_prompt_template(self) -> str:
         """Memuat prompt template, fallback ke default jika file tidak ada."""
