@@ -14,10 +14,14 @@ class AudioService:
         self.downloader = downloader
         self.processor = processor
 
-    def prepare_audio_for_analysis(self, url: str, work_dir: Path, filename_prefix: str) -> Optional[Path]:
+    def prepare_audio_for_analysis(self, url: str, work_dir: Path, filename_prefix: str) -> Path:
         """
         Memastikan file audio WAV yang siap untuk dianalisis tersedia.
         Mengatur alur: Cek Cache -> Unduh -> Konversi -> Hapus File Mentah.
+
+        Raises:
+            ConnectionError: Jika download gagal.
+            IOError: Jika konversi gagal.
         """
         wav_path = work_dir / f"{filename_prefix}.wav"
 
@@ -29,8 +33,8 @@ class AudioService:
         # 2. Unduh audio mentah
         raw_audio_path_str = self.downloader.download_audio(url, str(work_dir), filename_prefix)
         if not raw_audio_path_str:
-            logging.error("Gagal mengunduh audio mentah dari URL.")
-            return None
+            # Downloader seharusnya sudah mencatat error spesifik.
+            raise ConnectionError("Gagal mengunduh audio. Periksa koneksi internet atau URL video. Lihat log untuk detail dari yt-dlp.")
         
         raw_audio_path = Path(raw_audio_path_str)
 
@@ -44,5 +48,4 @@ class AudioService:
         if success and wav_path.exists():
             return wav_path
         
-        logging.error("Gagal mengonversi audio ke WAV.")
-        return None
+        raise IOError("Gagal mengonversi audio ke format WAV. Periksa instalasi FFmpeg dan file audio sumber.")

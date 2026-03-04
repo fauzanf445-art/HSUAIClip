@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 class AppPaths:
     # Base Directory (Root Project)
     # Gunakan default_factory agar aman dan dinamis
-    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent)
+    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())
     
     # Folder Struktur (init=False artinya field ini diisi otomatis oleh __post_init__)
     TEMP_DIR: Path = field(init=False)

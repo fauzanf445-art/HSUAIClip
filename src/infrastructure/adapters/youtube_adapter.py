@@ -10,6 +10,28 @@ from tqdm import tqdm
 
 from src.domain.interfaces import IMediaDownloader
 
+class YtDlpLogger:
+    """
+    A custom logger to redirect yt-dlp's output to Python's standard logging
+    module. This allows us to capture detailed error messages from yt-dlp
+    when a download fails, without cluttering the console during normal operation.
+    """
+    def debug(self, msg: str):
+        # yt-dlp sends both info and debug messages to this method.
+        # We can filter based on the prefix.
+        if msg.startswith('[debug] '):
+            logging.getLogger('yt-dlp').debug(msg)
+        else:
+            # These are info-level messages (e.g., '[youtube] Extracting URL').
+            # We log them to a dedicated logger, which can be silenced by default.
+            logging.getLogger('yt-dlp').info(msg)
+
+    def warning(self, msg: str):
+        logging.getLogger('yt-dlp').warning(msg)
+
+    def error(self, msg: str):
+        logging.getLogger('yt-dlp').error(msg)
+
 class YouTubeAdapter(IMediaDownloader):
     """
     Implementasi IMediaDownloader menggunakan yt-dlp.
@@ -79,10 +101,12 @@ class YouTubeAdapter(IMediaDownloader):
 
     def _get_base_opts(self) -> Dict[str, Any]:
         opts: Dict[str, Any] = {
-            'quiet': True,
             'no_warnings': False,
+            'verbose': True,
+            'noprogress': True,
             'socket_timeout': 30,
             'retries': 10,
+            'logger': YtDlpLogger(),
             'remote_components': ['ejs:npm', 'ejs:github'],
         }
         if self.deno_path:
@@ -185,10 +209,13 @@ class YouTubeAdapter(IMediaDownloader):
             for file_path in out_path.glob(f"{filename_prefix}.*"):
                 if file_path.suffix not in ['.part', '.ytdl']:
                     return str(file_path)
-                    
+            
+            logging.error(f"❌ Download audio gagal. Tidak ada file output yang ditemukan untuk prefix '{filename_prefix}'. Periksa koneksi atau URL video.")
+            return None
+
         except Exception as e:
-            logging.error(f"❌ Gagal mengunduh audio: {e}")
-        return None
+            logging.error(f"❌ Gagal mengunduh audio (yt-dlp exception): {e}", exc_info=True)
+            return None
 
     def _parse_subtitle_json(self, target_url: str) -> Optional[str]:
         try:

@@ -59,3 +59,4 @@ def setup_logging(log_file: Path, log_level=logging.INFO):
     logging.getLogger("googleapiclient").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("absl").setLevel(logging.WARNING)
+    logging.getLogger("yt-dlp").setLevel(logging.WARNING)
