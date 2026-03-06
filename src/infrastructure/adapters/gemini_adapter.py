@@ -44,7 +44,7 @@ class GeminiAdapter(IContentAnalyzer):
             TimeoutError: Jika proses indexing melebihi batas waktu.
             ValueError: Jika file gagal diproses dan statusnya bukan 'ACTIVE'.
         """
-        logging.info(f"Mengunggah file audio ke Gemini: {audio_path.name}...")
+        logging.debug(f"Mengunggah file audio ke Gemini: {audio_path.name}...")
         uploaded_file = self.client.files.upload(
             file=audio_path, # SDK terbaru mendukung argumen 'path' secara langsung
             config=types.UploadFileConfig(
@@ -67,7 +67,7 @@ class GeminiAdapter(IContentAnalyzer):
         if uploaded_file.state != "ACTIVE":
             raise ValueError(f"Gagal memproses audio. Status: {uploaded_file.state}")
         
-        logging.info(f"✅ Audio {uploaded_file.name} berhasil diproses.")
+        logging.debug(f"✅ Audio {uploaded_file.name} berhasil diproses.")
         return uploaded_file
 
     def analyze_content(self, transcript: str, audio_path: str, prompt: str) -> VideoSummary:
@@ -151,11 +151,10 @@ class GeminiAdapter(IContentAnalyzer):
 
         finally:
             if uploaded_file:
-                
                 try:
                     if not uploaded_file.name:
                         raise ValueError("File name is missing during processing")
                     self.client.files.delete(name=uploaded_file.name)
                     logging.info(f"🗑️ File {uploaded_file.name} dibersihkan dari server.")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logging.warning(f"Gagal membersihkan file di server Gemini ({uploaded_file.name}): {e}")

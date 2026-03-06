@@ -43,7 +43,7 @@ class AnalysisService:
             return None
         
         try:
-            logging.info(f"♻️ Memuat hasil analisis dari cache: {file_path.name}")
+            logging.debug(f"♻️ Memuat hasil analisis dari cache: {file_path.name}")
             data = json.loads(file_path.read_text(encoding='utf-8'))
             
             # Rekonstruksi objek Domain dari JSON (Manual Mapping)
@@ -72,6 +72,6 @@ class AnalysisService:
             }
             
             Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
-            logging.info(f"💾 Hasil analisis disimpan ke: {path}")
+            logging.debug(f"💾 Hasil analisis disimpan ke: {path}")
         except Exception as e:
             logging.error(f"❌ Gagal menyimpan cache: {e}")

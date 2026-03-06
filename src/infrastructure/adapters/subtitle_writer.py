@@ -24,7 +24,7 @@ class AssSubtitleWriter(ISubtitleWriter):
         font_size = int(base_font_size * scale_factor)
         margin_v = int(base_margin_v * scale_factor)
 
-        logging.info(f"   -> Menyesuaikan subtitle untuk resolusi {play_res_y}p. Font: {font_size}px, Margin-V: {margin_v}px")
+        logging.debug(f"   -> Menyesuaikan subtitle untuk resolusi {play_res_y}p. Font: {font_size}px, Margin-V: {margin_v}px")
 
         return f"""[Script Info]
 ScriptType: v4.00+
@@ -35,7 +35,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Poppins Bold,{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,2,0,8,10,10,{margin_v},1
+Style: Karaoke,Poppins Bold,{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,2,0,2,10,10,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -56,7 +56,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             logging.warning("Tidak ada kata yang terdeteksi. File subtitle tidak akan dibuat.")
             return
 
-        logging.info(f"📝 Menghasilkan subtitle dari {len(all_words)} kata...")
+        logging.debug(f"📝 Menghasilkan subtitle dari {len(all_words)} kata...")
 
         output_p = Path(output_path)
         output_p.parent.mkdir(parents=True, exist_ok=True)
@@ -72,9 +72,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 line_start_time, line_end_time = chunk[0]['start'], chunk[-1]['end']
                 start_str, end_str = self._format_timestamp(line_start_time), self._format_timestamp(line_end_time)
 
-                dialogue_parts = ["{\\blur3}"]
+                dialogue_parts = []
                 for word_data in chunk:
-                    text = word_data['word'].strip()
+                    text = word_data['word'].strip().upper()
                     rel_start_ms = int((word_data['start'] - line_start_time) * 1000)
                     
                     jump_dur, pop_dur, settle_dur = 120, 150, 100
@@ -91,4 +91,4 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 dialogue_text = "".join(dialogue_parts)
                 f.write(f"Dialogue: 0,{start_str},{end_str},Karaoke,,0,0,0,,{dialogue_text.strip()}\n")
 
-        logging.info(f"✅ Subtitle disimpan di: {output_path}")
+        logging.debug(f"✅ Subtitle disimpan di: {output_path}")

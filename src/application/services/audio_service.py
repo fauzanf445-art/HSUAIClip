@@ -27,7 +27,7 @@ class AudioService:
 
         # 1. Cek cache file WAV final
         if wav_path.exists() and wav_path.stat().st_size > 10240:
-            logging.info(f"♻️ Audio WAV cached: {wav_path.name}")
+            logging.debug(f"♻️ Audio WAV cached: {wav_path.name}")
             return wav_path
 
         # 2. Unduh audio mentah
@@ -39,7 +39,7 @@ class AudioService:
         raw_audio_path = Path(raw_audio_path_str)
 
         # 3. Konversi ke WAV
-        logging.info(f"⚙️ Mengonversi {raw_audio_path.name} ke format WAV...")
+        logging.debug(f"⚙️ Mengonversi {raw_audio_path.name} ke format WAV...")
         success = self.processor.convert_audio_to_wav(str(raw_audio_path), str(wav_path))
         
         # 4. Hapus file mentah setelah konversi

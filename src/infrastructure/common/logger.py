@@ -1,5 +1,5 @@
 """
-src/infrastructure/logging/logging_config.py
+src/infrastructure/common/logger.py
 Konfigurasi logging terpusat untuk HSUAIClip.
 """
 import logging
@@ -20,7 +20,7 @@ class TqdmLoggingHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-def setup_logging(log_file: Path, log_level=logging.INFO):
+def setup_logging(log_file: Path):
     """
     Mengonfigurasi root logger untuk menulis ke file dan konsol (via tqdm).
     """
@@ -37,16 +37,16 @@ def setup_logging(log_file: Path, log_level=logging.INFO):
     # maxBytes=5*1024*1024 (5MB), backupCount=3 (simpan 3 file lama: app.log.1, app.log.2, dst)
     file_handler = RotatingFileHandler(log_file, maxBytes=5*1024*1024, backupCount=3, encoding='utf-8')
     file_handler.setFormatter(file_formatter)
-    file_handler.setLevel(log_level)
+    file_handler.setLevel(logging.DEBUG) # File mencatat segalanya (DEBUG+)
 
     # 2. Console Handler (Menampilkan ke layar via TQDM)
     console_handler = TqdmLoggingHandler()
     console_handler.setFormatter(console_formatter)
-    console_handler.setLevel(log_level)
+    console_handler.setLevel(logging.INFO) # Console hanya info penting (INFO+)
 
     # Konfigurasi Root Logger
     root_logger = logging.getLogger()
-    root_logger.setLevel(log_level)
+    root_logger.setLevel(logging.DEBUG) # Root harus DEBUG agar FileHandler kebagian pesan DEBUG
     
     # Bersihkan handler lama (jika ada) untuk mencegah duplikasi
     if root_logger.hasHandlers():
@@ -60,3 +60,5 @@ def setup_logging(log_file: Path, log_level=logging.INFO):
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("absl").setLevel(logging.WARNING)
     logging.getLogger("yt-dlp").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)

@@ -11,7 +11,7 @@ from src.domain.interfaces import (
 
 # Import Config & UI for Orchestrator test
 from src.config.settings import AppConfig, AppPaths
-from src.infrastructure.ui.console import ConsoleUI
+from src.infrastructure.cli_ui import ConsoleUI
 
 # Import Services yang akan dites
 from src.application.services.media_service import MediaService

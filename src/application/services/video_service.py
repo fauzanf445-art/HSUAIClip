@@ -33,7 +33,7 @@ class VideoService:
             
             # Cek cache
             if output_path.exists() and output_path.stat().st_size > 1024:
-                logging.info(f"♻️ Klip cached: {filename}")
+                logging.debug(f"♻️ Klip cached: {filename}")
                 return output_path
 
             success = self.processor.cut_clip(

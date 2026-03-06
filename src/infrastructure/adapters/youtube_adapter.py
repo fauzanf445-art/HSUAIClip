@@ -27,7 +27,11 @@ class YtDlpLogger:
             logging.getLogger('yt-dlp').info(msg)
 
     def warning(self, msg: str):
-        logging.getLogger('yt-dlp').warning(msg)
+        # Filter peringatan berulang yang tidak kritis
+        if "n challenge" in msg or "challenge solving failed" in msg:
+            logging.getLogger('yt-dlp').debug(msg)
+        else:
+            logging.getLogger('yt-dlp').warning(msg)
 
     def error(self, msg: str):
         logging.getLogger('yt-dlp').error(msg)
@@ -41,7 +45,6 @@ class YouTubeAdapter(IMediaDownloader):
     def __init__(self, cookies_path: Optional[Union[str, Path]] = None, deno_path: Optional[str] = None):
         self.cookies_path = cookies_path
         self.deno_path = deno_path
-        # Cache sederhana untuk menyimpan info video per URL untuk menghindari request berulang
         self._info_cache: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod

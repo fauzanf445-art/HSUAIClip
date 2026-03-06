@@ -23,7 +23,7 @@ class CaptioningService:
         """
         if cache_path.exists():
             try:
-                logging.info(f"♻️ Memuat transkripsi dari cache: {cache_path.name}")
+                logging.debug(f"♻️ Memuat transkripsi dari cache: {cache_path.name}")
                 return json.loads(cache_path.read_text(encoding='utf-8'))
             except json.JSONDecodeError:
                 logging.warning("⚠️ Cache transkripsi korup. Menjalankan ulang transkripsi.")
@@ -35,7 +35,7 @@ class CaptioningService:
         if transcription_data:
             try:
                 cache_path.write_text(json.dumps(transcription_data, indent=2, ensure_ascii=False), encoding='utf-8')
-                logging.info(f"💾 Transkripsi disimpan ke cache: {cache_path.name}")
+                logging.debug(f"💾 Transkripsi disimpan ke cache: {cache_path.name}")
             except Exception as e:
                 logging.error(f"❌ Gagal menyimpan cache transkripsi: {e}")
             
@@ -56,7 +56,7 @@ class CaptioningService:
         output_path = Path(output_subtitle_path)
         
         if output_path.exists():
-            logging.info(f"♻️ Subtitle .ass cached: {output_path.name}")
+            logging.debug(f"♻️ Subtitle .ass cached: {output_path.name}")
             return output_path
 
         transcription_cache_path = cache_dir / f"{Path(clip_audio_path).stem}_transcript.json"

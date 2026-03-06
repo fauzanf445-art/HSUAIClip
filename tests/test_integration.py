@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 # Config & UI
 from src.config.settings import AppConfig
-from src.infrastructure.ui.console import ConsoleUI
+from src.infrastructure.cli_ui import ConsoleUI
 
 # Adapters
 from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
@@ -16,7 +16,7 @@ from src.infrastructure.adapters.ffmpeg_adapter import FFmpegAdapter
 from src.infrastructure.adapters.gemini_adapter import GeminiAdapter
 from src.infrastructure.adapters.whisper_adapter import WhisperAdapter
 from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
-from src.infrastructure.io.subtitle_writer import AssSubtitleWriter
+from src.infrastructure.adapters.subtitle_writer import AssSubtitleWriter
 
 # Services
 from src.application.services.media_service import MediaService
@@ -72,7 +72,8 @@ class TestFullPipeline(unittest.TestCase):
         # Inisialisasi semua komponen dengan implementasi nyata
         yt_adapter = YouTubeAdapter(cookies_path=cls.config.paths.COOKIE_FILE)
         ffmpeg_adapter = FFmpegAdapter(bin_path="ffmpeg")
-        gemini_adapter = GeminiAdapter(api_key=API_KEY, model_name=cls.config.gemini_model)
+        ffmpeg_adapter.initialize() # Panggil inisialisasi untuk konsistensi
+        gemini_adapter = GeminiAdapter(api_key=API_KEY, model_name=cls.config.gemini_model) # type: ignore
         
         whisper_hw = WhisperAdapter.detect_hardware()
         whisper_adapter = WhisperAdapter(**whisper_hw, download_root=str(cls.config.paths.WHISPER_MODELS_DIR))

@@ -1,12 +1,11 @@
 import os
-import logging
 from dotenv import load_dotenv
 
 
 # Config & UI
 from src.config.settings import AppConfig
-from src.infrastructure.ui.console import ConsoleUI
-from src.infrastructure.logging.logging_config import setup_logging
+from src.infrastructure.cli_ui import ConsoleUI
+from src.infrastructure.common.logger import setup_logging
 
 # Adapters
 from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
@@ -14,7 +13,7 @@ from src.infrastructure.adapters.ffmpeg_adapter import FFmpegAdapter
 from src.infrastructure.adapters.gemini_adapter import GeminiAdapter
 from src.infrastructure.adapters.whisper_adapter import WhisperAdapter
 from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
-from src.infrastructure.io.subtitle_writer import AssSubtitleWriter
+from src.infrastructure.adapters.subtitle_writer import AssSubtitleWriter
 
 # Services
 from src.application.services.media_service import MediaService
@@ -42,32 +41,26 @@ def setup_environment(config: AppConfig):
         os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
 
 def main():
-    # 1. Setup Dasar
     config = AppConfig()
     setup_environment(config)
-    # Inisialisasi Logging (File + Console TQDM)
     setup_logging(config.paths.LOG_FILE)
     
     ui = ConsoleUI()
     ui.print_banner()
 
-    # 2. Load Environment Variables (API Key)
     load_dotenv(config.paths.ENV_FILE)
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         api_key = ui.get_api_key()
-        # Simpan ke .env sederhana
         with open(config.paths.ENV_FILE, "w") as f:
             f.write(f"GEMINI_API_KEY={api_key}")
 
     try:
-        # 3. Inisialisasi Adapters (Infrastructure Layer)
-        # Deno path opsional, bisa diambil dari shutil.which di dalam adapter jika perlu
-        yt_adapter = YouTubeAdapter(cookies_path=config.paths.COOKIE_FILE)
-        ffmpeg_adapter = FFmpegAdapter(bin_path="ffmpeg") # Asumsi di PATH atau bin/
+        yt_adapter = YouTubeAdapter(cookies_path=config.paths.COOKIE_FILE, deno_path=str(config.paths.DENO_PATH))
+        ffmpeg_adapter = FFmpegAdapter(bin_path="ffmpeg")
+        ffmpeg_adapter.initialize()
         gemini_adapter = GeminiAdapter(api_key=api_key, model_name=config.gemini_model)
         
-        # Deteksi hardware otomatis untuk Whisper
         whisper_hw = WhisperAdapter.detect_hardware()
         whisper_adapter = WhisperAdapter(**whisper_hw, download_root=str(config.paths.WHISPER_MODELS_DIR))
         

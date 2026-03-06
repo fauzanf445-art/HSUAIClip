@@ -12,7 +12,7 @@ from src.application.services.captioning_service import CaptioningService
 
 # Import Config & UI
 from src.config.settings import AppConfig
-from src.infrastructure.ui.console import ConsoleUI
+from src.infrastructure.cli_ui import ConsoleUI
 from src.domain.models import Clip
 from src.domain.interfaces import TrackResult
 
@@ -128,13 +128,16 @@ class Orchestrator:
                     frame_pbar.total = total
                 frame_pbar.update(curr - frame_pbar.n)
             
-            result = self.video.track_subject(str(clip_path), str(output_tracked), progress_callback=progress_cb)
-            
-            if not frame_pbar.disable:
-                frame_pbar.update(frame_pbar.total - frame_pbar.n)
-                frame_pbar.close()
-
-            tracked_results.append((clip_path, result))
+            try:
+                # Eksekusi Sekuensial: Mencegah OOM dengan memproses satu per satu
+                result = self.video.track_subject(str(clip_path), str(output_tracked), progress_callback=progress_cb)
+                tracked_results.append((clip_path, result))
+            except Exception as e:
+                logging.error(f"❌ Gagal tracking klip {clip_path.name}: {e}")
+                self.ui.log(f"⚠️ Skip klip {clip_path.name} karena error tracking.")
+            finally:
+                if not frame_pbar.disable:
+                    frame_pbar.close()
 
         return tracked_results
 

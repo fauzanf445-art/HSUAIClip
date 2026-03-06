@@ -1,5 +1,3 @@
-import os
-import sys
 from pathlib import Path
 from dataclasses import dataclass, field
 
@@ -26,6 +24,7 @@ class AppPaths:
     # Files
     ENV_FILE: Path = field(init=False)
     COOKIE_FILE: Path = field(init=False)
+    DENO_PATH: Path = field(init=False)
     PROMPT_FILE: Path = field(init=False)
     FACE_LANDMARKER_FILE: Path = field(init=False)
 
@@ -46,7 +45,8 @@ class AppPaths:
         
         self.ENV_FILE = self.FILES_DIR / ".env"
         self.COOKIE_FILE = self.FILES_DIR / "cookies.txt"
-        self.PROMPT_FILE = self.BASE_DIR / "src" / "assets" / "prompts" / "gemini_prompt.txt"
+        self.DENO_PATH = self.BIN_DIR / "deno.exe"
+        self.PROMPT_FILE = self.BASE_DIR / "resources" / "prompts" / "gemini_prompt.txt"
         self.FACE_LANDMARKER_FILE = self.MEDIAPIPE_DIR / "face_landmarker.task"
 
 @dataclass
@@ -61,7 +61,7 @@ class AppConfig:
     motion_window_size: int = 5
     
     # Captioning
-    karaoke_chunk_size: int = 3
+    karaoke_chunk_size: int = 1
     
     # Whisper Model Strategy (Simple)
     whisper_model_size: str = "small" 
