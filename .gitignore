@@ -15,6 +15,7 @@ files/.env
 # Folder Output & Log Aplikasi
 Temp/
 Output/
+logs/
 *.log
 debug.log*
 
