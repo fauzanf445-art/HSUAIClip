@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import List, Optional, Callable, Tuple
 
 from src.domain.interfaces import IVideoProcessor
+from src.domain.exceptions import VideoProcessingError
+from src.infrastructure.common.json_cache import JsonCache
 
 class FFmpegAdapter(IVideoProcessor):
     """
@@ -26,11 +28,19 @@ class FFmpegAdapter(IVideoProcessor):
     # Argumen video CPU sebagai fallback
     CPU_VIDEO_ARGS = ['-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p']
 
-    def __init__(self, bin_path: str = "ffmpeg"):
+    def __init__(self, bin_path: str = "ffmpeg", cache_path: Optional[Path] = None):
         self.bin_path = bin_path
+        self.cache_path = cache_path
         self._video_args: List[str] = []
         self._common_args: List[str] = []
         self._codec_args: List[str] = []
+
+    @property
+    def is_gpu_enabled(self) -> bool:
+        """Mengembalikan True jika encoder yang aktif bukan CPU default."""
+        if not self._codec_args:
+            self.initialize()
+        return self._video_args != self.CPU_VIDEO_ARGS
 
     @staticmethod
     def _escape_ffmpeg_path(path_str: str) -> str:
@@ -104,7 +114,25 @@ class FFmpegAdapter(IVideoProcessor):
         if self._codec_args: # Sudah diinisialisasi
             return
 
-        _, self._video_args = self._determine_best_encoder()
+        # 1. Coba load dari cache
+        loaded_from_cache = False
+        if self.cache_path:
+            data = JsonCache.load(self.cache_path)
+            if data:
+                self._video_args = data.get('video_args', [])
+                encoder_name = data.get('encoder_name', 'Unknown')
+                if self._video_args:
+                    logging.info(f"🚀 FFmpeg Adapter: Menggunakan konfigurasi cached ({encoder_name}).")
+                    loaded_from_cache = True
+
+        # 2. Jika tidak ada cache, lakukan deteksi
+        if not loaded_from_cache:
+            friendly_name, self._video_args = self._determine_best_encoder()
+            
+            # Simpan ke cache
+            if self.cache_path:
+                cache_data = {'encoder_name': friendly_name, 'video_args': self._video_args}
+                JsonCache.save(cache_data, self.cache_path)
         
         self._common_args = [
             '-r', '30', '-vsync', '1',
@@ -121,7 +149,7 @@ class FFmpegAdapter(IVideoProcessor):
     def _get_codec_args(self) -> List[str]:
         """Mengembalikan argumen klip yang sudah di-cache. Memiliki safeguard jika initialize() belum dipanggil."""
         if not self._codec_args:
-            logging.warning("FFmpegAdapter.initialize() tidak dipanggil. Melakukan deteksi on-the-fly.")
+            logging.debug("Lazy initialization: Detecting FFmpeg hardware support...")
             self.initialize()
         return self._codec_args
 
@@ -146,8 +174,7 @@ class FFmpegAdapter(IVideoProcessor):
             )
             
             if process.returncode != 0:
-                logging.error(f"❌ FFmpeg Error ({description}). Cek file log untuk detail lengkap.")
-                logging.debug(f"❌ FFmpeg Full Error Log ({description}):\n{process.stderr}")
+                logging.debug(f"❌ FFmpeg Failure Log ({description}):\n{process.stderr}")
                 return False
                 
             return True
@@ -178,7 +205,6 @@ class FFmpegAdapter(IVideoProcessor):
                 return True
 
         # Jika semua percobaan gagal
-        logging.error(f"❌ Gagal total menjalankan {description} bahkan setelah fallback.")
         return False
 
     def cut_clip(self, source_url: str, start: float, end: float, output_path: str, audio_url: Optional[str] = None) -> bool:
@@ -218,7 +244,10 @@ class FFmpegAdapter(IVideoProcessor):
             cmd.append(output_path)
             return cmd
 
-        return self._run_with_fallback(build_cmd, f"Cut Clip: {Path(output_path).name}")
+        if not self._run_with_fallback(build_cmd, f"Cut Clip: {Path(output_path).name}"):
+            raise VideoProcessingError(f"Gagal memotong klip: {Path(output_path).name}")
+        
+        return True
 
     def render_final(self, video_path: str, audio_path: str, subtitle_path: Optional[str], output_path: str, fonts_dir: Optional[str] = None) -> bool:
         """
@@ -253,7 +282,10 @@ class FFmpegAdapter(IVideoProcessor):
             cmd.append(output_path)
             return cmd
 
-        return self._run_with_fallback(build_cmd, f"Render Final: {Path(output_path).name}")
+        if not self._run_with_fallback(build_cmd, f"Render Final: {Path(output_path).name}"):
+            raise VideoProcessingError(f"Gagal merender video final: {Path(output_path).name}")
+            
+        return True
 
     def convert_audio_to_wav(self, input_path: str, output_path: str) -> bool:
         """
@@ -271,4 +303,7 @@ class FFmpegAdapter(IVideoProcessor):
         ]
         
         # Operasi ini hanya CPU, tidak perlu fallback
-        return self._run_command(cmd, "Convert Audio to WAV")
+        if not self._run_command(cmd, "Convert Audio to WAV"):
+            raise VideoProcessingError(f"Gagal mengonversi audio ke WAV: {input_path}")
+            
+        return True

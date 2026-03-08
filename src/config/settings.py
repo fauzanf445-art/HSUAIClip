@@ -2,6 +2,18 @@ from pathlib import Path
 from dataclasses import dataclass, field
 
 @dataclass
+class SubtitleConfig:
+    """Konfigurasi styling untuk subtitle ASS."""
+    font_name: str = "Poppins Bold"
+    font_size: int = 60
+    primary_color: str = "&H00FFFFFF" # Putih
+    outline_color: str = "&H00000000" # Hitam Transparan
+    back_color: str = "&H80000000"    # Background Semi-Transparan
+    bold: int = 0
+    italic: int = 0
+    margin_v: int = 60
+
+@dataclass
 class AppPaths:
     # Base Directory (Root Project)
     # Gunakan default_factory agar aman dan dinamis
@@ -27,6 +39,7 @@ class AppPaths:
     DENO_PATH: Path = field(init=False)
     PROMPT_FILE: Path = field(init=False)
     FACE_LANDMARKER_FILE: Path = field(init=False)
+    FFMPEG_CACHE_FILE: Path = field(init=False)
 
     def __post_init__(self):
         """Menghitung path turunan berdasarkan BASE_DIR saat ini."""
@@ -48,6 +61,17 @@ class AppPaths:
         self.DENO_PATH = self.BIN_DIR / "deno.exe"
         self.PROMPT_FILE = self.BASE_DIR / "resources" / "prompts" / "gemini_prompt.txt"
         self.FACE_LANDMARKER_FILE = self.MEDIAPIPE_DIR / "face_landmarker.task"
+        self.FFMPEG_CACHE_FILE = self.FILES_DIR / "ffmpeg_cache.json"
+
+    def create_dirs(self):
+        """Membuat semua direktori yang diperlukan aplikasi."""
+        paths_to_create = [
+            self.TEMP_DIR, self.OUTPUT_DIR, self.MODELS_DIR,
+            self.FILES_DIR, self.FONTS_DIR, self.BIN_DIR,
+            self.LOGS_DIR, self.WHISPER_MODELS_DIR, self.MEDIAPIPE_DIR
+        ]
+        for path in paths_to_create:
+            path.mkdir(parents=True, exist_ok=True)
 
 @dataclass
 class AppConfig:
@@ -62,6 +86,9 @@ class AppConfig:
     
     # Captioning
     karaoke_chunk_size: int = 1
+    
+    # Subtitle Styling
+    subtitle: SubtitleConfig = field(default_factory=SubtitleConfig)
     
     # Whisper Model Strategy (Simple)
     whisper_model_size: str = "small" 

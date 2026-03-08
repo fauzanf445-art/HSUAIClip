@@ -1,4 +1,5 @@
 import logging
+import os
 import concurrent.futures
 from pathlib import Path
 from typing import List, Optional, Callable
@@ -17,10 +18,23 @@ class VideoService:
         self.processor = processor
         self.tracker = tracker
 
-    def batch_create_clips(self, clips: List[Clip], video_url: str, audio_url: Optional[str], output_dir: Path, max_workers: int = 2) -> List[Path]:
+    def batch_create_clips(self, clips: List[Clip], video_url: str, audio_url: Optional[str], output_dir: Path) -> List[Path]:
         """
         Membuat klip video dari stream URL secara paralel.
+        Jumlah workers disesuaikan otomatis berdasarkan jenis encoder (GPU/CPU).
         """
+        # Tentukan strategi konkurensi
+        if self.processor.is_gpu_enabled:
+            # Jika menggunakan GPU (NVENC/QSV), batasi worker agar tidak kehabisan sesi encoder/VRAM.
+            # Kebanyakan kartu grafis consumer (NVIDIA) dibatasi 3-5 sesi concurrent.
+            # Kita set 1 atau 2 agar aman dan stabil.
+            max_workers = 1 
+            logging.info("🚀 GPU Encoder terdeteksi: Membatasi proses paralel ke 1 worker untuk stabilitas.")
+        else:
+            # Jika CPU, gunakan jumlah core yang tersedia
+            max_workers = os.cpu_count() or 2
+            logging.info(f"⚙️ CPU Encoder terdeteksi: Menggunakan {max_workers} worker paralel.")
+
         output_dir.mkdir(parents=True, exist_ok=True)
         created_files: List[Path] = []
         
@@ -45,7 +59,7 @@ class VideoService:
             )
             return output_path if success else None
 
-        logging.info(f"🔄 Memproses {len(clips)} klip dengan {max_workers} threads...")
+        logging.info(f"🔄 Memulai pemotongan {len(clips)} klip...")
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_clip = {executor.submit(_process_clip, c): c for c in clips}

@@ -9,24 +9,7 @@ from dotenv import load_dotenv
 # Config & UI
 from src.config.settings import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
-
-# Adapters
-from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
-from src.infrastructure.adapters.ffmpeg_adapter import FFmpegAdapter
-from src.infrastructure.adapters.gemini_adapter import GeminiAdapter
-from src.infrastructure.adapters.whisper_adapter import WhisperAdapter
-from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
-from src.infrastructure.adapters.subtitle_writer import AssSubtitleWriter
-
-# Services
-from src.application.services.media_service import MediaService
-from src.application.services.audio_service import AudioService
-from src.application.services.analysis_service import AnalysisService
-from src.application.services.video_service import VideoService
-from src.application.services.captioning_service import CaptioningService
-
-# Pipeline
-from src.application.pipeline.orchestrator import Orchestrator
+from src.container import Container
 
 # --- Konfigurasi Tes ---
 # Gunakan video pendek dan publik untuk konsistensi
@@ -52,13 +35,8 @@ class TestFullPipeline(unittest.TestCase):
 
         # Replikasi setup environment yang sekarang ada di main.py
         # untuk memastikan test berjalan dalam kondisi yang sama.
-        paths_to_create = [
-            cls.config.paths.TEMP_DIR, cls.config.paths.OUTPUT_DIR, cls.config.paths.MODELS_DIR,
-            cls.config.paths.FILES_DIR, cls.config.paths.WHISPER_MODELS_DIR,
-            cls.config.paths.MEDIAPIPE_DIR, cls.config.paths.LOGS_DIR
-        ]
-        for path in paths_to_create:
-            path.mkdir(parents=True, exist_ok=True)
+        cls.config.paths.create_dirs()
+        
         bin_path = str(cls.config.paths.BIN_DIR.resolve())
         if bin_path not in os.environ["PATH"]:
             os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
@@ -69,29 +47,9 @@ class TestFullPipeline(unittest.TestCase):
         shutil.rmtree(cls.config.paths.TEMP_DIR / TEST_VIDEO_SAFE_NAME, ignore_errors=True)
         shutil.rmtree(cls.config.paths.OUTPUT_DIR / TEST_VIDEO_SAFE_NAME, ignore_errors=True)
 
-        # Inisialisasi semua komponen dengan implementasi nyata
-        yt_adapter = YouTubeAdapter(cookies_path=cls.config.paths.COOKIE_FILE)
-        ffmpeg_adapter = FFmpegAdapter(bin_path="ffmpeg")
-        ffmpeg_adapter.initialize() # Panggil inisialisasi untuk konsistensi
-        gemini_adapter = GeminiAdapter(api_key=API_KEY, model_name=cls.config.gemini_model) # type: ignore
-        
-        whisper_hw = WhisperAdapter.detect_hardware()
-        whisper_adapter = WhisperAdapter(**whisper_hw, download_root=str(cls.config.paths.WHISPER_MODELS_DIR))
-        
-        mp_adapter = MediaPipeAdapter(model_path=str(cls.config.paths.FACE_LANDMARKER_FILE), window_size=cls.config.motion_window_size)
-
-        subtitle_writer = AssSubtitleWriter()
-        media_service = MediaService(downloader=yt_adapter)
-        audio_service = AudioService(downloader=yt_adapter, processor=ffmpeg_adapter)
-        analysis_service = AnalysisService(analyzer=gemini_adapter)
-        video_service = VideoService(processor=ffmpeg_adapter, tracker=mp_adapter)
-        captioning_service = CaptioningService(transcriber=whisper_adapter, writer=subtitle_writer)
-
-        # Buat Orchestrator yang akan diuji
-        cls.orchestrator = Orchestrator(
-            cls.config, cls.ui, media_service, audio_service, 
-            analysis_service, video_service, captioning_service
-        )
+        # Inisialisasi via Container
+        cls.container = Container(cls.config, cls.ui, API_KEY)
+        cls.orchestrator = cls.container.orchestrator
 
     @classmethod
     def tearDownClass(cls):

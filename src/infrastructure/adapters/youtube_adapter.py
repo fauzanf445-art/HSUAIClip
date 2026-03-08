@@ -9,6 +9,7 @@ import yt_dlp
 from tqdm import tqdm
 
 from src.domain.interfaces import IMediaDownloader
+from src.domain.exceptions import MediaDownloadError
 
 class YtDlpLogger:
     """
@@ -134,9 +135,9 @@ class YouTubeAdapter(IMediaDownloader):
                     self._info_cache[url] = cast(Dict[str, Any], info)
                     return self._info_cache[url]
         except Exception as e:
-            logging.error(f"Extractor error: {e}")
+            raise MediaDownloadError(f"Gagal mengambil metadata video: {e}")
         
-        return {}
+        raise MediaDownloadError("Gagal mengambil metadata video (Info kosong).")
 
     def get_stream_urls(self, url: str) -> Tuple[Optional[str], Optional[str]]:
         info = self.get_video_info(url)
@@ -170,7 +171,7 @@ class YouTubeAdapter(IMediaDownloader):
                     if direct_url:
                         return direct_url, None
         except Exception as e:
-            logging.error(f"Gagal mengambil stream URL: {e}")
+            logging.warning(f"Gagal mengambil stream URL via fallback: {e}")
 
         return None, None
 
@@ -213,12 +214,10 @@ class YouTubeAdapter(IMediaDownloader):
                 if file_path.suffix not in ['.part', '.ytdl']:
                     return str(file_path)
             
-            logging.error(f"❌ Download audio gagal. Tidak ada file output yang ditemukan untuk prefix '{filename_prefix}'. Periksa koneksi atau URL video.")
-            return None
+            raise MediaDownloadError(f"Download audio gagal. File output tidak ditemukan: {filename_prefix}")
 
         except Exception as e:
-            logging.error(f"❌ Gagal mengunduh audio (yt-dlp exception): {e}", exc_info=True)
-            return None
+            raise MediaDownloadError(f"Gagal mengunduh audio: {e}")
 
     def _parse_subtitle_json(self, target_url: str) -> Optional[str]:
         try:

@@ -5,6 +5,7 @@ import re
 import uuid
 from pathlib import Path
 from typing import Optional, List, Union
+import dataclasses
 
 from google import genai
 from google.genai import types
@@ -70,6 +71,35 @@ class GeminiAdapter(IContentAnalyzer):
         logging.debug(f"✅ Audio {uploaded_file.name} berhasil diproses.")
         return uploaded_file
 
+    def _generate_clip_schema(self) -> types.Schema:
+        """
+        Membuat schema Gemini secara dinamis berdasarkan dataclass Clip.
+        Menghindari duplikasi definisi struktur data.
+        """
+        properties = {}
+        required_fields = []
+
+        type_mapping = {
+            str: types.Type.STRING,
+            int: types.Type.INTEGER,
+            float: types.Type.NUMBER
+        }
+
+        for field in dataclasses.fields(Clip):
+            # Skip field internal yang opsional (path fisik)
+            if field.name in ['raw_path', 'tracked_path', 'final_path', 'id']:
+                continue
+            
+            gemini_type = type_mapping.get(field.type, types.Type.STRING)
+            properties[field.name] = types.Schema(type=gemini_type)
+            required_fields.append(field.name)
+
+        return types.Schema(
+            type=types.Type.OBJECT,
+            properties=properties,
+            required=required_fields
+        )
+
     def analyze_content(self, transcript: str, audio_path: str, prompt: str) -> VideoSummary:
         """
         Menganalisis konten menggunakan Gemini dan mengembalikan objek domain VideoSummary.
@@ -89,6 +119,7 @@ class GeminiAdapter(IContentAnalyzer):
             request_parts.append(types.Part.from_text(text=f"Instruction:\n{prompt}"))
 
             # 3. Definisi Schema (Structured Output)
+            # Digenerate dinamis dari domain model
             summary_schema = types.Schema(
                 type=types.Type.OBJECT,
                 properties={
@@ -96,21 +127,7 @@ class GeminiAdapter(IContentAnalyzer):
                     "audio_energy_profile": types.Schema(type=types.Type.STRING),
                     "clips": types.Schema(
                         type=types.Type.ARRAY,
-                        items=types.Schema(
-                            type=types.Type.OBJECT,
-                            properties={
-                                "title": types.Schema(type=types.Type.STRING),
-                                "start_time": types.Schema(type=types.Type.NUMBER),
-                                "end_time": types.Schema(type=types.Type.NUMBER),
-                                "duration": types.Schema(type=types.Type.NUMBER),
-                                "energy_score": types.Schema(type=types.Type.INTEGER),
-                                "vocal_energy": types.Schema(type=types.Type.STRING),
-                                "audio_justification": types.Schema(type=types.Type.STRING),
-                                "description": types.Schema(type=types.Type.STRING),
-                                "caption": types.Schema(type=types.Type.STRING)
-                            },
-                            required=["title", "start_time", "end_time", "duration", "energy_score", "vocal_energy", "audio_justification", "description", "caption"]
-                        )
+                        items=self._generate_clip_schema()
                     )
                 },
                 required=["video_title", "audio_energy_profile", "clips"]

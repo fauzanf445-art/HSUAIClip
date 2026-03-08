@@ -1,7 +1,9 @@
 import logging
+import os
+import concurrent.futures
 from pathlib import Path
 from tqdm import tqdm
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 # Import Services
 from src.application.services.media_service import MediaService
@@ -146,24 +148,46 @@ class Orchestrator:
         self.ui.show_step("Captioning & Rendering Final")
         final_dir = self.config.paths.OUTPUT_DIR / safe_name
         final_clips = []
+        
+        # Tentukan jumlah worker berdasarkan kemampuan hardware (GPU vs CPU)
+        if self.video.processor.is_gpu_enabled:
+            max_workers = 1
+            logging.info("🚀 GPU Encoder terdeteksi: Rendering final dibatasi 1 worker.")
+        else:
+            max_workers = os.cpu_count() or 2
+            logging.info(f"⚙️ CPU Encoder terdeteksi: Rendering final menggunakan {max_workers} worker.")
 
-        for original_path, track_res in tqdm(tracked_results, desc="Rendering Clips", unit="clip"):
-            sub_path = final_dir / "subs" / f"{original_path.stem}.ass"
-            self.captioning.generate_subtitles_for_clip(
-                str(original_path), str(sub_path), work_dir, 
-                self.config.karaoke_chunk_size, track_res['width'], track_res['height']
-            )
+        def _process_render(item: Tuple[Path, TrackResult]) -> Optional[Path]:
+            original_path, track_res = item
+            try:
+                sub_path = final_dir / "subs" / f"{original_path.stem}.ass"
+                self.captioning.generate_subtitles_for_clip(
+                    str(original_path), str(sub_path), work_dir, 
+                    self.config.karaoke_chunk_size, track_res['width'], track_res['height']
+                )
 
-            final_out = final_dir / f"final_{original_path.name}"
-            if self.video.render_final_video(
-                video_path=str(track_res['tracked_video']), 
-                audio_path=str(original_path), 
-                subtitle_path=str(sub_path), 
-                output_path=str(final_out), 
-                fonts_dir=str(self.config.paths.FONTS_DIR)
-            ):
-                final_clips.append(final_out)
-        return final_clips
+                final_out = final_dir / f"final_{original_path.name}"
+                if self.video.render_final_video(
+                    video_path=str(track_res['tracked_video']), 
+                    audio_path=str(original_path), 
+                    subtitle_path=str(sub_path), 
+                    output_path=str(final_out), 
+                    fonts_dir=str(self.config.paths.FONTS_DIR)
+                ):
+                    return final_out
+            except Exception as e:
+                logging.error(f"❌ Gagal merender klip {original_path.name}: {e}")
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_process_render, item): item for item in tracked_results}
+            
+            for future in tqdm(concurrent.futures.as_completed(futures), total=len(tracked_results), desc="Rendering Clips", unit="clip"):
+                result = future.result()
+                if result:
+                    final_clips.append(result)
+                    
+        return sorted(final_clips, key=lambda p: p.name)
 
     def run(self, url: str):
         """Menjalankan pipeline lengkap."""

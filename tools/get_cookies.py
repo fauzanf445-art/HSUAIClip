@@ -12,9 +12,16 @@ except ImportError:
     print("   Harap install dependencies terlebih dahulu dengan: pip install -r requirements.txt")
     sys.exit(1)
 
-# Tambahkan root project ke sys.path agar bisa import modul clipper
-sys.path.append(str(Path(__file__).parent.parent))
-from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
+# Coba import modul src. Jika gagal, beri petunjuk cara menjalankan yang benar.
+try:
+    from src.infrastructure.adapters.youtube_adapter import YouTubeAdapter
+except ImportError:
+    print("❌ Error Import: Tidak dapat menemukan modul 'src'.")
+    print("👉 Harap jalankan script ini dari root folder project sebagai modul:")
+    print("   python -m tools.get_cookies")
+    print("\n👉 ATAU gunakan perintah utama yang baru:")
+    print("   python main.py --extract-cookies")
+    sys.exit(1)
 
 # Konfigurasi Logging sederhana
 logging.basicConfig(

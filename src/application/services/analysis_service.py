@@ -1,10 +1,10 @@
-import json
 import logging
 from pathlib import Path
 from typing import Optional
 
 from src.domain.interfaces import IContentAnalyzer
 from src.domain.models import VideoSummary, Clip
+from src.infrastructure.common.json_cache import JsonCache
 
 class AnalysisService:
     """
@@ -38,14 +38,11 @@ class AnalysisService:
 
     def _load_from_cache(self, path: str) -> Optional[VideoSummary]:
         """Helper internal untuk memuat JSON cache ke Domain Model."""
-        file_path = Path(path)
-        if not file_path.exists():
+        data = JsonCache.load(Path(path))
+        if not data:
             return None
         
         try:
-            logging.debug(f"♻️ Memuat hasil analisis dari cache: {file_path.name}")
-            data = json.loads(file_path.read_text(encoding='utf-8'))
-            
             # Rekonstruksi objek Domain dari JSON (Manual Mapping)
             clips = []
             clips = [Clip.from_dict(c_data) for c_data in data.get('clips', [])]
@@ -56,22 +53,14 @@ class AnalysisService:
                 clips=clips
             )
         except Exception as e:
-            logging.warning(f"⚠️ Cache korup atau tidak valid: {e}")
+            logging.warning(f"⚠️ Struktur cache tidak valid: {e}")
             return None
 
     def _save_to_cache(self, summary: VideoSummary, path: str):
         """Helper internal untuk menyimpan Domain Model ke JSON."""
-        try:
-            # Konversi Domain Model ke Dictionary menggunakan metode to_dict()
-            # Ini menghilangkan duplikasi logika dan mematuhi prinsip DRY.
-            data = {
-                "video_title": summary.video_title,
-                "audio_energy_profile": summary.audio_energy_profile,
-                # Setiap objek Clip sekarang bertanggung jawab atas serialisasinya sendiri.
-                "clips": [c.to_dict() for c in summary.clips]
-            }
-            
-            Path(path).write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding='utf-8')
-            logging.debug(f"💾 Hasil analisis disimpan ke: {path}")
-        except Exception as e:
-            logging.error(f"❌ Gagal menyimpan cache: {e}")
+        data = {
+            "video_title": summary.video_title,
+            "audio_energy_profile": summary.audio_energy_profile,
+            "clips": [c.to_dict() for c in summary.clips]
+        }
+        JsonCache.save(data, Path(path))

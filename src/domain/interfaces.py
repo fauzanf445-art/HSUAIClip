@@ -23,6 +23,11 @@ class TrackResult(TypedDict):
 
 class IVideoProcessor(ABC):
     """Interface untuk manipulasi video (FFmpeg/OpenCV)."""
+    
+    @property
+    @abstractmethod
+    def is_gpu_enabled(self) -> bool: ...
+
     @abstractmethod
     def cut_clip(self, source_url: str, start: float, end: float, output_path: str, audio_url: Optional[str] = None) -> bool: ...
     

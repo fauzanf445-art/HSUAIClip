@@ -3,12 +3,16 @@ from pathlib import Path
 from typing import List
 
 from src.domain.interfaces import ISubtitleWriter, TranscriptionSegment
+from src.config.settings import SubtitleConfig
 
 class AssSubtitleWriter(ISubtitleWriter):
     """
     Bertanggung jawab untuk menulis data transkripsi ke dalam format file .ass
     dengan efek karaoke.
     """
+
+    def __init__(self, config: SubtitleConfig = SubtitleConfig()):
+        self.config = config
 
     def _format_timestamp(self, seconds: float) -> str:
         """Mengonversi detik ke format timestamp ASS (H:MM:SS.cc)."""
@@ -19,10 +23,10 @@ class AssSubtitleWriter(ISubtitleWriter):
 
     def _generate_ass_header(self, play_res_x: int, play_res_y: int) -> str:
         """Menghasilkan header standar V4+ Styles untuk file .ass."""
-        base_font_size, base_margin_v, ref_height = 60, 60, 1080
+        ref_height = 1080
         scale_factor = play_res_y / ref_height
-        font_size = int(base_font_size * scale_factor)
-        margin_v = int(base_margin_v * scale_factor)
+        font_size = int(self.config.font_size * scale_factor)
+        margin_v = int(self.config.margin_v * scale_factor)
 
         logging.debug(f"   -> Menyesuaikan subtitle untuk resolusi {play_res_y}p. Font: {font_size}px, Margin-V: {margin_v}px")
 
@@ -35,7 +39,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,Poppins Bold,{font_size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,3,2,0,2,10,10,{margin_v},1
+Style: Karaoke,{self.config.font_name},{font_size},{self.config.primary_color},{self.config.primary_color},{self.config.outline_color},{self.config.back_color},{self.config.bold},{self.config.italic},0,0,100,100,0,0,3,2,0,2,10,10,{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
