@@ -1,6 +1,7 @@
 import logging
 import os
 import concurrent.futures
+import shutil
 from pathlib import Path
 from tqdm import tqdm
 from typing import List, Tuple, Optional
@@ -191,6 +192,7 @@ class Orchestrator:
 
     def run(self, url: str):
         """Menjalankan pipeline lengkap."""
+        work_dir: Optional[Path] = None
         try:
             safe_name, work_dir = self._prepare_workspace(url)
             
@@ -208,8 +210,16 @@ class Orchestrator:
             
             final_clips = self._render_final_clips(tracked_results, work_dir, safe_name)
 
-            self.ui.show_success(self.config.paths.OUTPUT_DIR / safe_name, final_clips)
+            output_folder = self.config.paths.OUTPUT_DIR / safe_name
+            self.ui.show_success(output_folder, final_clips)
+
+            # Panggil fungsi pemangkasan setelah proses berhasil
+            self.ui.prune_output_directory(self.config.paths.OUTPUT_DIR)
 
         except Exception as e:
             logging.error("Orchestrator Error", exc_info=True)
             self.ui.show_error(str(e))
+        finally:
+            if work_dir and work_dir.exists():
+                self.ui.log(f"Membersihkan folder kerja sementara: {work_dir}")
+                shutil.rmtree(work_dir, ignore_errors=True)

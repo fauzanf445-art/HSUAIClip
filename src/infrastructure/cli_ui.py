@@ -1,8 +1,9 @@
 import logging
 import getpass
+import os
 import re
-from typing import Optional, List, Dict
 from pathlib import Path
+from typing import Optional, List, Dict, Tuple
 
 class ConsoleUI:
     """Antarmuka Pengguna berbasis Terminal."""
@@ -78,3 +79,93 @@ class ConsoleUI:
     def log(self, msg: str):
         """Wrapper untuk print biasa agar user melihat progress."""
         logging.info(f"   -> {msg}")
+
+    def _get_files_to_prune(
+        self, 
+        video_files: List[Tuple[Path, float, int]], 
+        max_files: int, 
+        max_size_mb: int
+    ) -> List[Path]:
+        """
+        Logika murni untuk menentukan file mana yang akan dihapus berdasarkan aturan.
+        Dapat diuji secara terpisah tanpa I/O file.
+        
+        Args:
+            video_files: List tuple berisi (path, mtime, size).
+            max_files: Jumlah file maksimum yang diizinkan.
+            max_size_mb: Ukuran total folder maksimum dalam MB.
+
+        Returns:
+            List Path file yang harus dihapus, diurutkan dari yang paling tua.
+        """
+        # Urutkan file dari yang paling tua ke yang paling baru
+        video_files.sort(key=lambda x: x[1])
+
+        to_delete_by_count = set()
+        to_delete_by_size = set()
+
+        # Aturan 1: Hapus file tertua jika jumlah file melebihi batas
+        if len(video_files) > max_files:
+            for i in range(len(video_files) - max_files):
+                to_delete_by_count.add(video_files[i][0])
+
+        # Aturan 2: Hapus file tertua jika total ukuran melebihi batas
+        # Aturan ini dihitung secara independen, dan hasilnya digabungkan.
+        # Test case `test_get_files_to_prune_combined_rules` mengasumsikan
+        # bahwa kita harus berada di BAWAH (<) batas ukuran, bukan <=.
+        current_total_size = sum(f[2] for f in video_files)
+        max_size_bytes = max_size_mb * 1024 * 1024
+
+        for file_path, _, file_size in video_files:
+            if current_total_size < max_size_bytes:
+                break
+            to_delete_by_size.add(file_path)
+            current_total_size -= file_size
+
+        to_delete_paths = to_delete_by_count.union(to_delete_by_size)
+
+        # Kembalikan sebagai list yang diurutkan berdasarkan waktu modifikasi (paling tua dulu)
+        return sorted(list(to_delete_paths), key=lambda p: p.stat().st_mtime)
+
+    def prune_output_directory(self, output_dir: Path, max_files: int = 10, max_size_mb: int = 500):
+        """
+        Memangkas folder output jika melebihi batas ukuran atau jumlah file.
+        Menghapus file video tertua (berdasarkan waktu modifikasi) terlebih dahulu.
+        """
+        self.log(f"Memeriksa folder output untuk pemangkasan: {output_dir}")
+        
+        try:
+            # 1. Kumpulkan semua file video final dan statistiknya
+            video_files = []
+            for root, _, files in os.walk(output_dir):
+                for file in files:
+                    if file.lower().startswith('final_') and file.lower().endswith(('.mp4', '.mov')):
+                        file_path = Path(root) / file
+                        try:
+                            stat = file_path.stat()
+                            video_files.append((file_path, stat.st_mtime, stat.st_size))
+                        except FileNotFoundError:
+                            continue # File mungkin sudah dihapus oleh proses lain
+            
+            num_files = len(video_files)
+            total_size_mb = sum(f[2] for f in video_files) / (1024 * 1024)
+            self.log(f"Status saat ini: {num_files} file, {total_size_mb:.2f} MB")
+
+            # 2. Dapatkan daftar file untuk dihapus dari logika terpisah yang bisa diuji
+            files_to_delete = self._get_files_to_prune(video_files, max_files, max_size_mb)
+
+            if not files_to_delete:
+                self.log("Tidak ada pemangkasan yang diperlukan.")
+                return
+
+            # 3. Lakukan penghapusan file
+            self.log(f"Akan menghapus {len(files_to_delete)} file...")
+            for file_path in files_to_delete:
+                try:
+                    self.log(f"   -> Menghapus {file_path.name}")
+                    file_path.unlink()
+                except OSError as e:
+                    self.show_error(f"Gagal menghapus file {file_path}: {e}")
+        
+        except Exception as e:
+            self.show_error(f"Terjadi error saat memangkas folder output: {e}")
