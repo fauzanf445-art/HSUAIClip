@@ -36,10 +36,6 @@ class TestFullPipeline(unittest.TestCase):
         # Replikasi setup environment yang sekarang ada di main.py
         # untuk memastikan test berjalan dalam kondisi yang sama.
         cls.config.paths.create_dirs()
-        
-        bin_path = str(cls.config.paths.BIN_DIR.resolve())
-        if bin_path not in os.environ["PATH"]:
-            os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
 
         cls.ui = ConsoleUI() # Kita tetap butuh instance-nya, meski tidak akan menampilkan ke user
 

@@ -11,6 +11,7 @@ __pycache__/
 *.env
 files/cookies.txt
 files/.env
+files/ffmpeg_cache.json
 
 # Folder Output & Log Aplikasi
 Temp/

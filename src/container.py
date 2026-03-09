@@ -32,17 +32,12 @@ class Container:
         
         # 1. Init Adapters
         self.yt_adapter = YouTubeAdapter(
-            cookies_path=config.paths.COOKIE_FILE, 
-            deno_path=str(config.paths.DENO_PATH)
+            cookies_path=config.paths.COOKIE_FILE
         )
         
-        # Setup FFmpeg Path (Prioritaskan local bin, fallback ke PATH)
-        ffmpeg_binary = "ffmpeg.exe" if os.name == 'nt' else "ffmpeg"
-        local_ffmpeg = config.paths.BIN_DIR / ffmpeg_binary
-        ffmpeg_cmd = str(local_ffmpeg) if local_ffmpeg.exists() else "ffmpeg"
-
+        # Gunakan 'ffmpeg' yang diasumsikan ada di PATH sistem
         self.ffmpeg_adapter = FFmpegAdapter(
-            bin_path=ffmpeg_cmd,
+            bin_path="ffmpeg",
             cache_path=config.paths.FFMPEG_CACHE_FILE
         )
         

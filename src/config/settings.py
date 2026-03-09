@@ -25,7 +25,6 @@ class AppPaths:
     MODELS_DIR: Path = field(init=False)
     FILES_DIR: Path = field(init=False)
     FONTS_DIR: Path = field(init=False)
-    BIN_DIR: Path = field(init=False)
     LOGS_DIR: Path = field(init=False)
     LOG_FILE: Path = field(init=False)
     
@@ -36,7 +35,6 @@ class AppPaths:
     # Files
     ENV_FILE: Path = field(init=False)
     COOKIE_FILE: Path = field(init=False)
-    DENO_PATH: Path = field(init=False)
     PROMPT_FILE: Path = field(init=False)
     FACE_LANDMARKER_FILE: Path = field(init=False)
     FFMPEG_CACHE_FILE: Path = field(init=False)
@@ -48,7 +46,6 @@ class AppPaths:
         self.MODELS_DIR = self.BASE_DIR / "models"
         self.FILES_DIR = self.BASE_DIR / "files"
         self.FONTS_DIR = self.BASE_DIR / "fonts"
-        self.BIN_DIR = self.BASE_DIR / "bin"
         
         self.LOGS_DIR = self.BASE_DIR / "logs"
         self.LOG_FILE = self.LOGS_DIR / "app.log"
@@ -58,7 +55,6 @@ class AppPaths:
         
         self.ENV_FILE = self.FILES_DIR / ".env"
         self.COOKIE_FILE = self.FILES_DIR / "cookies.txt"
-        self.DENO_PATH = self.BIN_DIR / "deno.exe"
         self.PROMPT_FILE = self.BASE_DIR / "resources" / "prompts" / "gemini_prompt.txt"
         self.FACE_LANDMARKER_FILE = self.MEDIAPIPE_DIR / "face_landmarker.task"
         self.FFMPEG_CACHE_FILE = self.FILES_DIR / "ffmpeg_cache.json"
@@ -67,7 +63,7 @@ class AppPaths:
         """Membuat semua direktori yang diperlukan aplikasi."""
         paths_to_create = [
             self.TEMP_DIR, self.OUTPUT_DIR, self.MODELS_DIR,
-            self.FILES_DIR, self.FONTS_DIR, self.BIN_DIR,
+            self.FILES_DIR, self.FONTS_DIR,
             self.LOGS_DIR, self.WHISPER_MODELS_DIR, self.MEDIAPIPE_DIR
         ]
         for path in paths_to_create:

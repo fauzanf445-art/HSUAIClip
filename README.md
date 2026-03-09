@@ -41,27 +41,31 @@ modular, dapat diuji, dan mudah dikelola.
 
 ## 📋 Prasyarat Sistem
 
-Aplikasi ini membutuhkan **FFmpeg** untuk semua operasi video dan audio.
+Aplikasi ini membutuhkan beberapa perangkat lunak eksternal yang harus terinstal
+secara global di sistem Anda dan tersedia di `PATH`.
 
-### Metode Instalasi FFmpeg
+1. **FFmpeg**: Diperlukan untuk semua operasi video dan audio.
+2. **Node.js**: Diperlukan sebagai JavaScript runtime untuk `yt-dlp` agar dapat
+   mengunduh beberapa video dari YouTube.
 
-Anda dapat memilih salah satu dari dua metode berikut:
+### Perintah Instalasi
 
-#### Opsi 1: Portable (Disarankan)
+Pastikan untuk membuka terminal/CMD baru setelah instalasi agar `PATH`
+diperbarui.
 
-1. Buat folder bernama `bin` di dalam direktori utama proyek (`HSUAICLIP/bin`).
-2. Unduh FFmpeg dari gyan.dev (pilih `full` build).
-3. Ekstrak dan letakkan `ffmpeg.exe` dan `ffprobe.exe` ke dalam folder `bin`
-   yang telah Anda buat. Aplikasi akan otomatis mendeteksinya.
-
-#### Opsi 2: Instalasi Sistem
-
-Instal FFmpeg secara global dan pastikan direktori `bin`-nya ditambahkan ke
-`PATH` environment variable sistem Anda.
-
-- **Windows (via Winget):** `winget install Gyan.FFmpeg`
-- **Linux (Ubuntu/Debian):** `sudo apt update && sudo apt install ffmpeg`
-- **macOS (via Homebrew):** `brew install ffmpeg`
+- **Windows (via Winget):**
+  ```powershell
+  winget install Gyan.FFmpeg
+  winget install OpenJS.NodeJS.LTS
+  ```
+- **Linux (Ubuntu/Debian):**
+  ```bash
+  sudo apt update && sudo apt install ffmpeg nodejs npm
+  ```
+- **macOS (via Homebrew):**
+  ```bash
+  brew install ffmpeg node
+  ```
 
 ---
 

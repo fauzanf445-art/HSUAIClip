@@ -140,6 +140,12 @@ class TestOrchestrator(unittest.TestCase):
         self.mock_video_service = MagicMock(spec=VideoService)
         self.mock_captioning_service = MagicMock(spec=CaptioningService)
 
+        # Configure nested mock attributes to prevent AttributeErrors
+        # The orchestrator checks this property to decide on parallelism.
+        # We must configure the nested 'processor' mock explicitly when using a spec.
+        self.mock_video_service.processor = MagicMock()
+        self.mock_video_service.processor.is_gpu_enabled = False
+
         # Configure mock paths
         self.mock_config.paths = MagicMock(spec=AppPaths)
         self.mock_config.paths.TEMP_DIR = Path("/tmp")

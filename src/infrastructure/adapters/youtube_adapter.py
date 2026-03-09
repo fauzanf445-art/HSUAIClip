@@ -43,9 +43,8 @@ class YouTubeAdapter(IMediaDownloader):
     Menangani interaksi dengan YouTube: Metadata, Stream URL, Audio Download, dan Cookies.
     """
 
-    def __init__(self, cookies_path: Optional[Union[str, Path]] = None, deno_path: Optional[str] = None):
+    def __init__(self, cookies_path: Optional[Union[str, Path]] = None):
         self.cookies_path = cookies_path
-        self.deno_path = deno_path
         self._info_cache: Dict[str, Dict[str, Any]] = {}
 
     @staticmethod
@@ -112,9 +111,9 @@ class YouTubeAdapter(IMediaDownloader):
             'retries': 10,
             'logger': YtDlpLogger(),
             'remote_components': ['ejs:npm', 'ejs:github'],
+            # Format yang benar adalah dict, bukan list. {'node': {}} mengaktifkan node dari PATH.
+            'js_runtimes': {'node': {}},
         }
-        if self.deno_path:
-            opts['js_runtimes'] = {'deno': {'path': self.deno_path}}
         if self.cookies_path:
             path_obj = Path(self.cookies_path)
             if path_obj.exists():

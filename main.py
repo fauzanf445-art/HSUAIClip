@@ -11,16 +11,9 @@ from src.container import Container
 
 def setup_environment(config: AppConfig):
     """
-    Mempersiapkan lingkungan eksekusi: membuat folder yang diperlukan
-    dan mendaftarkan direktori binary ke PATH sistem.
+    Mempersiapkan lingkungan eksekusi dengan membuat semua folder yang diperlukan.
     """
-    # 1. Membuat semua direktori via AppPaths
     config.paths.create_dirs()
-
-    # 2. Menambahkan folder bin ke PATH agar FFmpeg dapat ditemukan
-    bin_path = str(config.paths.BIN_DIR.resolve())
-    if bin_path not in os.environ["PATH"]:
-        os.environ["PATH"] = bin_path + os.pathsep + os.environ["PATH"]
 
 def main():
     # Setup Argument Parser
