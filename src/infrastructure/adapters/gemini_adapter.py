@@ -110,9 +110,10 @@ class GeminiAdapter(IContentAnalyzer):
         try:
             request_parts: List[types.Part] = []
 
-            # 2. Upload Audio jika ada
             if audio_file_path.exists():
                 uploaded_file = self._upload_and_process_audio(audio_file_path)
+                request_parts.append(types.Part(uploaded_file))
+
             if transcript:
                 request_parts.append(types.Part.from_text(text=transcript))
 
