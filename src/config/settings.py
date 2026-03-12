@@ -79,6 +79,7 @@ class AppConfig:
     
     # Motion Tracking
     motion_window_size: int = 5
+    motion_process_every_n_frames: int = 3
     
     # Captioning
     karaoke_chunk_size: int = 1

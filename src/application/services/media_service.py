@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, Dict, Any, Tuple
 from src.domain.interfaces import IMediaDownloader
+from src.infrastructure.common.utils import sanitize_filename
 
 class MediaService:
     """
@@ -29,8 +30,5 @@ class MediaService:
         """Membuat nama file aman dari judul video."""
         info = self.get_video_metadata(url)
         title = info.get('title', 'Unknown_Video')
-        # Sanitasi
-        raw_safe = "".join([c for c in title if c.isalnum() or c in (' ', '-', '_')]).strip()
-        # Ganti spasi ganda/berlebih menjadi satu spasi
-        safe_title = " ".join(raw_safe.split())
+        safe_title = sanitize_filename(title)
         return safe_title[:50] # Batasi panjang

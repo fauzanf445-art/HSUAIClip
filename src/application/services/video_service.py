@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from src.domain.interfaces import IVideoProcessor, IFaceTracker, TrackResult
 from src.domain.models import Clip
+from src.infrastructure.common.utils import sanitize_filename
 
 class VideoService:
     """

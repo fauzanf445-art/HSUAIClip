@@ -27,7 +27,6 @@ class ConsoleUI:
                 print("❌ URL wajib diisi.")
                 continue
             
-            # Validasi Regex sederhana
             if not re.match(r'^(https?://)?(www\.)?(youtube\.com|youtu\.be)/.+$', url):
                 print("❌ Format URL tidak valid.")
                 continue

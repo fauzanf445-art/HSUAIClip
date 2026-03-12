@@ -111,7 +111,6 @@ class YouTubeAdapter(IMediaDownloader):
             'retries': 10,
             'logger': YtDlpLogger(),
             'remote_components': ['ejs:npm', 'ejs:github'],
-            # Format yang benar adalah dict, bukan list. {'node': {}} mengaktifkan node dari PATH.
             'js_runtimes': {'node': {}},
         }
         if self.cookies_path:

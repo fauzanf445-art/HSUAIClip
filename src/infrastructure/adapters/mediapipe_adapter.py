@@ -17,9 +17,10 @@ class MediaPipeAdapter(IFaceTracker):
 
     MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
 
-    def __init__(self, model_path: str, window_size: int = 5):
+    def __init__(self, model_path: str, window_size: int = 5, process_every_n_frames: int = 3):
         self.model_path = model_path
         self.window_size = window_size
+        self.process_every_n_frames = process_every_n_frames
         self._gpu_fallback_logged = False
 
         # Cek model file
@@ -124,36 +125,32 @@ class MediaPipeAdapter(IFaceTracker):
             ema_alpha = 0.2  # Faktor smoothing (0.0 - 1.0)
             current_center_x = float(orig_width // 2) # Mulai dari tengah
             
-            # Frame Skipping
-            process_every_n_frames = 3
-
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret:
                     break
 
-                # 2. Frame Skipping & Detection
-                if frame_idx % process_every_n_frames == 0:
-                    # Konversi ke RGB untuk MediaPipe
-                    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+                # 2. Deteksi pada setiap frame
+                # Konversi ke RGB untuk MediaPipe
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
 
-                    # Hitung timestamp (Monotonically Increasing)
-                    timestamp_ms = int((frame_idx * 1000) / fps)
-                    if timestamp_ms <= last_timestamp_ms:
-                        timestamp_ms = last_timestamp_ms + 1
-                    last_timestamp_ms = timestamp_ms
+                # Hitung timestamp (Monotonically Increasing)
+                timestamp_ms = int((frame_idx * 1000) / fps)
+                if timestamp_ms <= last_timestamp_ms:
+                    timestamp_ms = last_timestamp_ms + 1
+                last_timestamp_ms = timestamp_ms
 
-                    detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
+                detection_result = landmarker.detect_for_video(mp_image, timestamp_ms)
 
-                    # 3. Update Center dengan Landmark Hidung (Index 4) & EMA
-                    if detection_result.face_landmarks:
-                        # Ambil landmark hidung (index 4) sebagai referensi stabil
-                        nose_landmark = detection_result.face_landmarks[0][4]
-                        target_x = nose_landmark.x * orig_width
-                        
-                        # Terapkan EMA untuk pergerakan kamera yang halus
-                        current_center_x = (ema_alpha * target_x) + ((1 - ema_alpha) * current_center_x)
+                # 3. Update Center dengan Landmark Hidung (Index 4) & EMA
+                if detection_result.face_landmarks:
+                    # Ambil landmark hidung (index 4) sebagai referensi stabil
+                    nose_landmark = detection_result.face_landmarks[0][4]
+                    target_x = nose_landmark.x * orig_width
+                    
+                    # Terapkan EMA untuk pergerakan kamera yang halus
+                    current_center_x = (ema_alpha * target_x) + ((1 - ema_alpha) * current_center_x)
 
                 # 4. Hitung Koordinat Crop dengan presisi dan batasan
                 # Logika ini memastikan hasil crop memiliki lebar yang benar dan berada dalam batas video.
@@ -171,13 +168,9 @@ class MediaPipeAdapter(IFaceTracker):
                 # 5. Crop & Resize Cerdas (Hanya jika perlu)
                 cropped_frame = frame[:, x1:x2]
                 
-                # OPTIMASI: Hanya panggil resize jika dimensi hasil crop tidak sesuai dengan target.
-                # Ini secara signifikan mengurangi beban CPU, karena resize tidak lagi dilakukan pada setiap frame.
-                # Ini biasanya hanya terjadi jika video asli lebih sempit dari target 9:16.
-                if cropped_frame.shape[1] != out_width or cropped_frame.shape[0] != out_height:
-                    final_frame = cv2.resize(cropped_frame, (out_width, out_height), interpolation=cv2.INTER_AREA)
-                else:
-                    final_frame = cropped_frame
+                # Selalu resize untuk memastikan dimensi output konsisten.
+                # Menghilangkan optimasi sebelumnya untuk menjamin setiap frame sesuai target.
+                final_frame = cv2.resize(cropped_frame, (out_width, out_height), interpolation=cv2.INTER_AREA)
                 
                 out.write(final_frame)
 

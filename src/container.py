@@ -48,7 +48,8 @@ class Container:
         
         self.mp_adapter = MediaPipeAdapter(
             model_path=str(config.paths.FACE_LANDMARKER_FILE), 
-            window_size=config.motion_window_size
+            window_size=config.motion_window_size,
+            process_every_n_frames=config.motion_process_every_n_frames
         )
 
         self.subtitle_writer = AssSubtitleWriter(config=config.subtitle)

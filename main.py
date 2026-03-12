@@ -1,6 +1,5 @@
 import os
 import argparse
-import sys
 from dotenv import load_dotenv
 
 # Config & UI
@@ -55,6 +54,11 @@ def main():
             url = args.url
         else:
             url = ui.get_video_url()
+        
+        url = url.split('#')[0].strip()
+        if not url:
+            ui.show_error("URL menjadi kosong setelah sanitasi. Harap berikan URL video yang valid.")
+            return
             
         container.orchestrator.run(url)
 
