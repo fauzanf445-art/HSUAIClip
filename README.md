@@ -47,6 +47,7 @@ secara global di sistem Anda dan tersedia di `PATH`.
 1. **FFmpeg**: Diperlukan untuk semua operasi video dan audio.
 2. **Node.js**: Diperlukan sebagai JavaScript runtime untuk `yt-dlp` agar dapat
    mengunduh beberapa video dari YouTube.
+3. **Docker**: Diperlukan untuk menjalankan aplikasi dalam lingkungan kontainer yang konsisten (Opsional untuk lokal, wajib untuk simulasi HF).
 
 ### Perintah Instalasi
 
@@ -55,6 +56,7 @@ diperbarui.
 
 - **Windows (via Winget):**
   ```powershell
+  winget install Docker.DockerDesktop
   winget install Gyan.FFmpeg
   winget install OpenJS.NodeJS.LTS
   ```
@@ -109,16 +111,33 @@ diperbarui.
      Edge, dll.) dan menyimpannya ke `files/cookies.txt`. Pastikan browser Anda
      dalam keadaan tertutup saat menjalankan skrip ini.
 
-## 🚀 Cara Menjalankan
+## 🚀 Cara Menjalankan (Hybrid Mode)
 
-Setelah semua konfigurasi selesai, jalankan aplikasi utama:
+Aplikasi ini mendukung dua mode operasional:
 
+### 1. Mode CLI (Terminal)
+Gunakan mode ini untuk penggunaan cepat di komputer lokal.
 ```bash
-python main.py
+python app.py
 ```
 
-Aplikasi akan meminta URL YouTube, lalu memulai proses pipeline. Anda juga dapat
-memasukkan _timestamp_ manual jika tidak ingin menggunakan analisis AI.
+### 2. Mode Web (Gradio)
+Gunakan mode ini untuk antarmuka visual atau saat dijalankan di server.
+```bash
+python app.py --web
+```
+Akses antarmuka melalui browser di `http://localhost:7860`.
+
+## 🐳 Menjalankan dengan Docker
+
+Simulasikan lingkungan Hugging Face Spaces secara lokal:
+```bash
+# Build image
+docker build -t hsuaiclips .
+
+# Run container (pastikan .env berisi GEMINI_API_KEY)
+docker run -it -p 7860:7860 --env-file files/.env hsuaiclips
+```
 
 ## 🧪 Menjalankan Tes
 

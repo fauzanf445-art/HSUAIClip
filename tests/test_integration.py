@@ -45,6 +45,9 @@ class TestFullPipeline(unittest.TestCase):
 
         # Inisialisasi via Container
         cls.container = Container(cls.config, cls.ui, API_KEY)
+        
+        # Pastikan cookies di-setup dari environment variable (Secret)
+        cls.container.yt_adapter.check_and_setup_cookies(cls.config.paths.COOKIE_FILE)
         cls.orchestrator = cls.container.orchestrator
 
     @classmethod

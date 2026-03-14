@@ -1,9 +1,11 @@
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any, Optional
 
 class JsonCache:
+    """Utilitas untuk menangani cache data dalam format JSON."""
     @staticmethod
     def load(path: Path) -> Optional[Any]:
         if not path.exists():
@@ -25,3 +27,10 @@ class JsonCache:
         except Exception as e:
             logging.error(f"❌ Gagal menyimpan cache ({path.name}): {e}")
             return False
+
+def sanitize_filename(name: str) -> str:
+    """Membersihkan string agar aman digunakan sebagai nama file/folder."""
+    # Hapus semua karakter yang bukan alfanumerik, spasi, strip, atau underscore
+    raw_safe = re.sub(r'[^\w\s\-_]', '', name).strip()
+    # Ganti beberapa spasi atau karakter whitespace lainnya menjadi satu spasi tunggal
+    return re.sub(r'\s+', ' ', raw_safe)

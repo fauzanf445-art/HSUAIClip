@@ -7,6 +7,7 @@ from tqdm import tqdm
 
 from src.domain.interfaces import IVideoProcessor, IFaceTracker, ITranscriber, ISubtitleWriter, TrackResult
 from src.domain.models import Clip
+from src.infrastructure.common.utils import sanitize_filename
 
 class EditorService:
 
@@ -32,7 +33,7 @@ class EditorService:
         created_files: List[Path] = []
         
         def _process_clip(clip: Clip) -> Optional[Path]:            
-            safe_title = "".join([c for c in clip.title if c.isalnum() or c in (' ', '_', '-')]).strip()
+            safe_title = sanitize_filename(clip.title)
             filename = f"{clip.id[:8]}_{safe_title}.mp4"            
             output_path = output_dir / filename
             

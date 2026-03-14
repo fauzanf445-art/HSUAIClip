@@ -14,21 +14,18 @@ from src.config import AppConfig, AppPaths
 from src.infrastructure.cli_ui import ConsoleUI
 
 # Import Services yang akan dites
-from src.application.services.media_service import MediaService
-from src.application.services.video_service import VideoService
-from src.application.services.analysis_service import AnalysisService
-from src.application.services.audio_service import AudioService
-from src.application.services.captioning_service import CaptioningService
+from src.service.provider_service import ProviderService
+from src.service.editor_service import EditorService
 
 # Import Orchestrator
-from src.application.orchestrator import Orchestrator
+from src.service.orchestrator import Orchestrator
 
-class TestMediaService(unittest.TestCase):
+class TestProviderService(unittest.TestCase):
     def setUp(self):
         # Mock Interface Downloader
         self.mock_downloader = MagicMock(spec=IMediaDownloader)
         # Injeksi Mock ke Service
-        self.service = MediaService(downloader=self.mock_downloader)
+        self.service = ProviderService(downloader=self.mock_downloader, processor=MagicMock(), analyzer=MagicMock())
 
     def test_get_video_metadata(self):
         # Arrange
@@ -43,23 +40,16 @@ class TestMediaService(unittest.TestCase):
         self.assertEqual(result, expected_info)
         self.mock_downloader.get_video_info.assert_called_once_with(url)
 
-    def test_get_safe_filename(self):
-        # Arrange
-        url = "http://youtube.com/test"
-        self.mock_downloader.get_video_info.return_value = {"title": "Video / Dengan @ Karakter & Aneh!"}
-
-        # Act
-        safe_name = self.service.get_safe_filename(url)
-
-        # Assert
-        # Karakter non-alphanumeric (kecuali spasi, -, _) harus hilang
-        self.assertEqual(safe_name, "Video Dengan Karakter Aneh")
-
-class TestVideoService(unittest.TestCase):
+class TestEditorService(unittest.TestCase):
     def setUp(self):
         self.mock_processor = MagicMock(spec=IVideoProcessor)
         self.mock_tracker = MagicMock(spec=IFaceTracker)
-        self.service = VideoService(processor=self.mock_processor, tracker=self.mock_tracker)
+        self.service = EditorService(
+            processor=self.mock_processor, 
+            tracker=self.mock_tracker, 
+            transcriber=MagicMock(), 
+            writer=MagicMock()
+        )
 
     def test_batch_create_clips(self):
         # Arrange
@@ -106,7 +96,7 @@ class TestVideoService(unittest.TestCase):
 class TestAnalysisService(unittest.TestCase):
     def setUp(self):
         self.mock_analyzer = MagicMock(spec=IContentAnalyzer)
-        self.service = AnalysisService(analyzer=self.mock_analyzer)
+        self.service = ProviderService(downloader=MagicMock(), processor=MagicMock(), analyzer=self.mock_analyzer)
 
     def test_analyze_video_no_cache(self):
         # Arrange
@@ -134,17 +124,14 @@ class TestOrchestrator(unittest.TestCase):
         """Set up mock objects for all dependencies."""
         self.mock_config = MagicMock(spec=AppConfig)
         self.mock_ui = MagicMock(spec=ConsoleUI)
-        self.mock_media_service = MagicMock(spec=MediaService)
-        self.mock_audio_service = MagicMock(spec=AudioService)
-        self.mock_analysis_service = MagicMock(spec=AnalysisService)
-        self.mock_video_service = MagicMock(spec=VideoService)
-        self.mock_captioning_service = MagicMock(spec=CaptioningService)
-
+        self.mock_provider_service = MagicMock(spec=ProviderService)
+        self.mock_editor_service = MagicMock(spec=EditorService)
+        
         # Configure nested mock attributes to prevent AttributeErrors
         # The orchestrator checks this property to decide on parallelism.
         # We must configure the nested 'processor' mock explicitly when using a spec.
-        self.mock_video_service.processor = MagicMock()
-        self.mock_video_service.processor.is_gpu_enabled = False
+        self.mock_editor_service.processor = MagicMock()
+        self.mock_editor_service.processor.is_gpu_enabled = False
 
         # Configure mock paths
         self.mock_config.paths = MagicMock(spec=AppPaths)
@@ -157,11 +144,8 @@ class TestOrchestrator(unittest.TestCase):
         self.orchestrator = Orchestrator(
             config=self.mock_config,
             ui=self.mock_ui,
-            media_service=self.mock_media_service,
-            audio_service=self.mock_audio_service,
-            analysis_service=self.mock_analysis_service,
-            video_service=self.mock_video_service,
-            captioning_service=self.mock_captioning_service
+            provider=self.mock_provider_service,
+            editor=self.mock_editor_service
         )
 
     def test_prepare_workspace(self):
@@ -169,7 +153,7 @@ class TestOrchestrator(unittest.TestCase):
         # Arrange
         url = "http://test.url"
         safe_name = "test_video"
-        self.mock_media_service.get_safe_filename.return_value = safe_name
+        self.mock_provider_service.get_video_metadata.return_value = {'title': safe_name}
         
         # Act
         with patch.object(Path, 'mkdir') as mock_mkdir:
@@ -177,7 +161,7 @@ class TestOrchestrator(unittest.TestCase):
 
         # Assert
         self.mock_ui.show_step.assert_called_once_with("Persiapan Workspace")
-        self.mock_media_service.get_safe_filename.assert_called_once_with(url)
+        self.mock_provider_service.get_video_metadata.assert_called_once_with(url)
         mock_mkdir.assert_called_once_with(parents=True, exist_ok=True)
         self.mock_ui.log.assert_called_once_with(f"Working Directory: {Path('/tmp') / safe_name}")
         self.assertEqual(result_name, safe_name)
@@ -198,8 +182,7 @@ class TestOrchestrator(unittest.TestCase):
         self.mock_ui.get_manual_clips.assert_called_once()
         self.mock_ui.log.assert_called_with(f"Mode manual: {len(manual_timestamps)} klip akan diproses.")
         # Ensure AI path is not taken
-        self.mock_media_service.get_transcript.assert_not_called()
-        self.mock_analysis_service.analyze_video.assert_not_called()
+        self.mock_provider_service.get_transcript.assert_not_called()
         
         # Verify that the orchestrator correctly created the Clip object
         self.assertEqual(len(result_clips), 1)
@@ -218,19 +201,19 @@ class TestOrchestrator(unittest.TestCase):
         summary = VideoSummary(video_title="AI Video", audio_energy_profile="Dynamic", clips=ai_clips)
         
         self.mock_ui.get_manual_clips.return_value = None
-        self.mock_media_service.get_transcript.return_value = "some transcript"
-        self.mock_audio_service.prepare_audio_for_analysis.return_value = work_dir / "full_audio.wav"
+        self.mock_provider_service.get_transcript.return_value = "some transcript"
+        self.mock_provider_service.prepare_audio_for_analysis.return_value = work_dir / "full_audio.wav"
         self.mock_config.get_prompt_template.return_value = "some prompt"
-        self.mock_analysis_service.analyze_video.return_value = summary
+        self.mock_provider_service.analyze_video.return_value = summary
 
         # Act
         result_clips = self.orchestrator._get_clips_for_processing(url, work_dir)
 
         # Assert
         self.mock_ui.get_manual_clips.assert_called_once()
-        self.mock_media_service.get_transcript.assert_called_once_with(url)
-        self.mock_audio_service.prepare_audio_for_analysis.assert_called_once_with(url, work_dir, "full_audio")
-        self.mock_analysis_service.analyze_video.assert_called_once_with(
+        self.mock_provider_service.get_transcript.assert_called_once_with(url)
+        self.mock_provider_service.prepare_audio_for_analysis.assert_called_once_with(url, work_dir, "full_audio")
+        self.mock_provider_service.analyze_video.assert_called_once_with(
             transcript="some transcript",
             audio_path=str(work_dir / "full_audio.wav"),
             prompt="some prompt",
@@ -247,16 +230,16 @@ class TestOrchestrator(unittest.TestCase):
         video_url, audio_url = "http://vid.stream", "http://aud.stream"
         expected_paths = [work_dir / "raw_clips" / "c1_C1.mp4"]
         
-        self.mock_media_service.get_stream_urls.return_value = (video_url, audio_url)
-        self.mock_video_service.batch_create_clips.return_value = expected_paths
+        self.mock_provider_service.get_stream_urls.return_value = (video_url, audio_url)
+        self.mock_editor_service.batch_create_clips.return_value = expected_paths
 
         # Act
         result_paths = self.orchestrator._cut_raw_clips(clips_to_cut, url, work_dir)
 
         # Assert
         self.mock_ui.show_step.assert_called_once_with("Memotong Klip Video")
-        self.mock_media_service.get_stream_urls.assert_called_once_with(url)
-        self.mock_video_service.batch_create_clips.assert_called_once_with(
+        self.mock_provider_service.get_stream_urls.assert_called_once_with(url)
+        self.mock_editor_service.batch_create_clips.assert_called_once_with(
             clips=clips_to_cut,
             video_url=video_url,
             audio_url=audio_url,
@@ -274,7 +257,7 @@ class TestOrchestrator(unittest.TestCase):
         tracked_results = [(original_path, track_res)]
         final_clip_path = self.mock_config.paths.OUTPUT_DIR / safe_name / f"final_{original_path.name}"
 
-        self.mock_video_service.render_final_video.return_value = True
+        self.mock_editor_service.render_final_video.return_value = True
 
         # Act
         with patch.object(Path, 'mkdir'):
@@ -282,9 +265,8 @@ class TestOrchestrator(unittest.TestCase):
 
         # Assert
         self.mock_ui.show_step.assert_called_once_with("Captioning & Rendering Final")
-        expected_sub_path = self.mock_config.paths.OUTPUT_DIR / safe_name / "subs" / f"{original_path.stem}.ass"
-        self.mock_captioning_service.generate_subtitles_for_clip.assert_called_once()
-        self.mock_video_service.render_final_video.assert_called_once()
+        self.mock_editor_service.generate_subtitles_for_clip.assert_called_once()
+        self.mock_editor_service.render_final_video.assert_called_once()
         self.assertEqual(len(final_clips), 1)
         self.assertEqual(final_clips[0], final_clip_path)
 

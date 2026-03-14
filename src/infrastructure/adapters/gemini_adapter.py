@@ -112,10 +112,6 @@ class GeminiAdapter(IContentAnalyzer):
 
             if audio_file_path.exists():
                 uploaded_file = self._upload_and_process_audio(audio_file_path)
-                # The generate_content API expects a Part containing only the file's URI and mime_type.
-                # Passing the full `types.File` object from the upload response includes a `display_name`,
-                # which is not a supported parameter for inference and causes a ValueError.
-                # We construct the Part manually as a dict with only the required fields.
                 request_parts.append(types.Part({
                     "file_data": {
                         "file_uri": uploaded_file.uri,
@@ -128,8 +124,6 @@ class GeminiAdapter(IContentAnalyzer):
 
             request_parts.append(types.Part.from_text(text=f"Instruction:\n{prompt}"))
 
-            # 3. Definisi Schema (Structured Output)
-            # Digenerate dinamis dari domain model
             summary_schema = types.Schema(
                 type=types.Type.OBJECT,
                 properties={
@@ -145,13 +139,14 @@ class GeminiAdapter(IContentAnalyzer):
 
             # 4. Request ke Gemini
             logging.debug("Mengirim permintaan multimodal ke Gemini...")
-            contents = types.Content(
-                role="user",
-                parts=request_parts)
             
             response: types.GenerateContentResponse = self.client.models.generate_content(
                 model=self.model_name,
-                contents=contents,
+                contents=types.Content(
+                    role="user",
+                    parts=request_parts
+                )
+,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=summary_schema

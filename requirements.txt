@@ -1,3 +1,4 @@
+gradio
 faster-whisper
 google-genai
 mediapipe

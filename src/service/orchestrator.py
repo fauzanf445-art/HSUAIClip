@@ -13,6 +13,7 @@ from src.service.editor_service import EditorService
 # Import Config & UI
 from src.config import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
+from src.infrastructure.common.utils import sanitize_filename
 from src.domain.models import Clip
 from src.domain.interfaces import TrackResult
 
@@ -75,7 +76,8 @@ class Orchestrator:
     def _prepare_workspace(self, url: str) -> Tuple[str, Path]:
         """Mempersiapkan folder kerja untuk proses pipeline."""
         self.ui.show_step("Persiapan Workspace")
-        safe_name = self.provider.get_video_metadata(url).get('title', 'Unknown_Video')
+        raw_title = self.provider.get_video_metadata(url).get('title', 'Unknown_Video')
+        safe_name = sanitize_filename(raw_title)
         work_dir = self.config.paths.TEMP_DIR / safe_name
         work_dir.mkdir(parents=True, exist_ok=True)
         self.ui.log(f"Working Directory: {work_dir}")

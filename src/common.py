@@ -1,5 +1,4 @@
 import logging
-import re
 
 import logging.config
 from pathlib import Path
@@ -66,10 +65,3 @@ def setup_logging(log_file: Path):
     }
 
     logging.config.dictConfig(logging_config)
-
-def sanitize_filename(name: str) -> str:
-    # Hapus semua karakter yang bukan alfanumerik, spasi, strip, atau underscore
-    raw_safe = re.sub(r'[^\w\s\-_]', '', name).strip()
-    # Ganti beberapa spasi atau karakter whitespace lainnya menjadi satu spasi tunggal
-    safe_name = re.sub(r'\s+', ' ', raw_safe)
-    return safe_name

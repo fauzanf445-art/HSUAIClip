@@ -78,7 +78,7 @@ class YouTubeAdapter(IMediaDownloader):
     def check_and_setup_cookies(cookies_path: Union[str, Path]) -> Optional[Path]:
         path_obj = Path(cookies_path)
         if path_obj.exists() and path_obj.stat().st_size > 0:
-            logging.debug(f"✅ File cookies ditemukan di: {path_obj}")
+            logging.info(f"✅ File cookies ditemukan di: {path_obj}")
             return path_obj
 
         if env_cookies := os.getenv("YOUTUBE_COOKIES"):
@@ -89,6 +89,11 @@ class YouTubeAdapter(IMediaDownloader):
                 return path_obj
             except Exception as e:
                 logging.error(f"Gagal menyimpan cookies dari Env: {e}")
+
+        # Jangan mencoba ekstraksi browser jika berjalan di Hugging Face/Docker
+        if os.getenv("SPACE_ID"):
+            logging.warning("⚠️ Berjalan di lingkungan Cloud. Ekstraksi cookies browser dilewati.")
+            return None
 
         if YouTubeAdapter.extract_cookies_from_browser(path_obj):
             return path_obj
@@ -102,10 +107,12 @@ class YouTubeAdapter(IMediaDownloader):
             'noprogress': True,
             'socket_timeout': 30,
             'retries': 10,
+            'nocheckcertificate': True,
             'logger': YtDlpLogger(),
             'remote_components': ['ejs:npm', 'ejs:github'],
             'js_runtimes': {'node': {}},
         }
+
         if self.cookies_path:
             path_obj = Path(self.cookies_path)
             if path_obj.exists():

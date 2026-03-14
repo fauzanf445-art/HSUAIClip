@@ -4,7 +4,7 @@ from typing import Optional, Dict, Any
 
 from src.domain.interfaces import IMediaDownloader, IVideoProcessor, IContentAnalyzer
 from src.domain.models import VideoSummary, Clip
-from src.infrastructure.common.json_cache import JsonCache
+from src.infrastructure.common.utils import JsonCache
 
 class ProviderService:
     def __init__(self, downloader: IMediaDownloader, processor: IVideoProcessor, analyzer: IContentAnalyzer):

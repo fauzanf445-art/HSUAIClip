@@ -6,7 +6,7 @@ from typing import List, Optional, Callable, Tuple
 
 from src.domain.interfaces import IVideoProcessor
 from src.domain.exceptions import VideoProcessingError
-from src.infrastructure.common.json_cache import JsonCache
+from src.infrastructure.common.utils import JsonCache
 
 class FFmpegAdapter(IVideoProcessor):
     """

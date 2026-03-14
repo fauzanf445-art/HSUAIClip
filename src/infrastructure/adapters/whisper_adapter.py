@@ -1,6 +1,8 @@
 import logging
 import torch
 from typing import List, Optional, Dict, Any
+
+
 from faster_whisper import WhisperModel
 
 from src.domain.interfaces import ITranscriber, TranscriptionSegment, TranscriptionWord
