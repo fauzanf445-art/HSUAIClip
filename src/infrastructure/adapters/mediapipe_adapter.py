@@ -45,9 +45,6 @@ class MediaPipeAdapter(IFaceTracker):
             raise RuntimeError("Gagal mengunduh model MediaPipe. Periksa koneksi internet.")
 
     def track_and_crop(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> TrackResult:
-        """
-        Melakukan tracking wajah dan cropping vertikal (9:16).
-        """
         # Setup MediaPipe Tasks
         BaseOptions = python.BaseOptions
         FaceLandmarker = vision.FaceLandmarker

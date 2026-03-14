@@ -4,10 +4,6 @@ from pathlib import Path
 from typing import Any, Optional
 
 class JsonCache:
-    """
-    Utility class untuk menangani operasi caching file JSON secara terpusat.
-    Menghindari duplikasi kode try-except dan open/write di berbagai service.
-    """
     @staticmethod
     def load(path: Path) -> Optional[Any]:
         if not path.exists():

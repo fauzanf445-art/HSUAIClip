@@ -3,7 +3,6 @@ from dataclasses import dataclass, field
 
 @dataclass
 class SubtitleConfig:
-    """Konfigurasi styling untuk subtitle ASS."""
     font_name: str = "Poppins Bold"
     font_size: int = 60
     primary_color: str = "&H00FFFFFF" # Putih
@@ -15,9 +14,8 @@ class SubtitleConfig:
 
 @dataclass
 class AppPaths:
-    # Base Directory (Root Project)
     # Gunakan default_factory agar aman dan dinamis
-    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).parent.parent.parent.resolve())
+    BASE_DIR: Path = field(default_factory=lambda: Path(__file__).parent.parent.resolve())
     
     # Folder Struktur (init=False artinya field ini diisi otomatis oleh __post_init__)
     TEMP_DIR: Path = field(init=False)
@@ -40,7 +38,6 @@ class AppPaths:
     FFMPEG_CACHE_FILE: Path = field(init=False)
 
     def __post_init__(self):
-        """Menghitung path turunan berdasarkan BASE_DIR saat ini."""
         self.TEMP_DIR = self.BASE_DIR / "Temp"
         self.OUTPUT_DIR = self.BASE_DIR / "Output"
         self.MODELS_DIR = self.BASE_DIR / "models"
@@ -60,7 +57,6 @@ class AppPaths:
         self.FFMPEG_CACHE_FILE = self.FILES_DIR / "ffmpeg_cache.json"
 
     def create_dirs(self):
-        """Membuat semua direktori yang diperlukan aplikasi."""
         paths_to_create = [
             self.TEMP_DIR, self.OUTPUT_DIR, self.MODELS_DIR,
             self.FILES_DIR, self.FONTS_DIR,

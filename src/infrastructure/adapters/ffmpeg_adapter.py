@@ -89,8 +89,6 @@ class FFmpegAdapter(IVideoProcessor):
             return False
 
     def _determine_best_encoder(self) -> Tuple[str, List[str]]:
-        """Mendeteksi hardware acceleration (NVIDIA, Intel, AMD, Apple) secara aktif."""
-        # Daftar encoder untuk dicoba, dalam urutan prioritas
         encoders_to_test = [
             ('h264_nvenc', "NVIDIA NVENC", ['-c:v', 'h264_nvenc', '-preset', 'p4', '-cq', '24', '-rc', 'vbr', '-tune', 'hq', '-pix_fmt', 'yuv420p']),
             ('h264_qsv', "Intel QuickSync (QSV)", ['-c:v', 'h264_qsv', '-global_quality', '23', '-preset', 'veryfast', '-pix_fmt', 'nv12']),
@@ -107,29 +105,22 @@ class FFmpegAdapter(IVideoProcessor):
         return "CPU", self.CPU_VIDEO_ARGS
 
     def initialize(self):
-        """
-        Mendeteksi, memverifikasi, dan meng-cache argumen encoder. 
-        Harus dipanggil sekali saat startup.
-        """
-        if self._codec_args: # Sudah diinisialisasi
+        if self._codec_args:
             return
 
-        # 1. Coba load dari cache
         loaded_from_cache = False
         if self.cache_path:
             data = JsonCache.load(self.cache_path)
             if data:
                 self._video_args = data.get('video_args', [])
                 encoder_name = data.get('encoder_name', 'Unknown')
-                if self._video_args:
-                    logging.info(f"🚀 FFmpeg Adapter: Menggunakan konfigurasi cached ({encoder_name}).")
-                    loaded_from_cache = True
+                logging.info(f"🚀 FFmpeg Adapter: Menggunakan konfigurasi cached ({encoder_name}).")
+                loaded_from_cache = True
 
-        # 2. Jika tidak ada cache, lakukan deteksi
         if not loaded_from_cache:
             friendly_name, self._video_args = self._determine_best_encoder()
             
-            # Simpan ke cache
+
             if self.cache_path:
                 cache_data = {'encoder_name': friendly_name, 'video_args': self._video_args}
                 JsonCache.save(cache_data, self.cache_path)
@@ -142,13 +133,11 @@ class FFmpegAdapter(IVideoProcessor):
             '-threads', '0'
         ]
         
-        # Gabungkan semua argumen yang akan sering digunakan
         self._codec_args = self._common_args + self._video_args + self.AAC_AUDIO_ARGS
         logging.debug(f"FFmpeg codec args initialized: {' '.join(self._codec_args)}")
 
     def _get_codec_args(self) -> List[str]:
-        """Mengembalikan argumen klip yang sudah di-cache. Memiliki safeguard jika initialize() belum dipanggil."""
-        if not self._codec_args:
+        if not self._codec_args:        
             logging.debug("Lazy initialization: Detecting FFmpeg hardware support...")
             self.initialize()
         return self._codec_args

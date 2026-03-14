@@ -1,8 +1,7 @@
 import logging
 import torch
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from faster_whisper import WhisperModel
-from faster_whisper.transcribe import Segment
 
 from src.domain.interfaces import ITranscriber, TranscriptionSegment, TranscriptionWord
 
@@ -59,7 +58,7 @@ class WhisperAdapter(ITranscriber):
             logging.warning(f"⚠️ Gagal mendeteksi GPU (Torch error: {e}). Default ke CPU.")
             return {'model_size': 'small', 'device': 'cpu', 'compute_type': 'int8'}
 
-    def _segment_to_dict(self, segment: Segment) -> TranscriptionSegment:
+    def _segment_to_dict(self, segment: Any) -> TranscriptionSegment:
         """Mengubah objek Segment dari faster-whisper menjadi dictionary."""
         words_list: List[TranscriptionWord] = []
         if segment.words:

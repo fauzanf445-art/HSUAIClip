@@ -3,13 +3,9 @@ from pathlib import Path
 from typing import List
 
 from src.domain.interfaces import ISubtitleWriter, TranscriptionSegment
-from src.config.settings import SubtitleConfig
+from src.config import SubtitleConfig
 
 class AssSubtitleWriter(ISubtitleWriter):
-    """
-    Bertanggung jawab untuk menulis data transkripsi ke dalam format file .ass
-    dengan efek karaoke.
-    """
 
     def __init__(self, config: SubtitleConfig = SubtitleConfig()):
         self.config = config

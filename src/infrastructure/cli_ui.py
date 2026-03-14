@@ -86,16 +86,6 @@ class ConsoleUI:
         max_size_mb: int
     ) -> List[Path]:
         """
-        Logika murni untuk menentukan file mana yang akan dihapus berdasarkan aturan.
-        Dapat diuji secara terpisah tanpa I/O file.
-        
-        Args:
-            video_files: List tuple berisi (path, mtime, size).
-            max_files: Jumlah file maksimum yang diizinkan.
-            max_size_mb: Ukuran total folder maksimum dalam MB.
-
-        Returns:
-            List Path file yang harus dihapus, diurutkan dari yang paling tua.
         """
         # Urutkan file dari yang paling tua ke yang paling baru
         video_files.sort(key=lambda x: x[1])

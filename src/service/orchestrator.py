@@ -7,45 +7,75 @@ from tqdm import tqdm
 from typing import List, Tuple, Optional
 
 # Import Services
-from src.application.services.media_service import MediaService
-from src.application.services.audio_service import AudioService
-from src.application.services.analysis_service import AnalysisService
-from src.application.services.video_service import VideoService
-from src.application.services.captioning_service import CaptioningService
+from src.service.provider_service import ProviderService
+from src.service.editor_service import EditorService
 
 # Import Config & UI
-from src.config.settings import AppConfig
+from src.config import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
 from src.domain.models import Clip
 from src.domain.interfaces import TrackResult
 
 class Orchestrator:
-    """
-    Mengatur alur kerja (pipeline) utama aplikasi.
-    Menghubungkan semua service untuk memproses video dari awal hingga akhir.
-    """
     def __init__(
         self,
         config: AppConfig,
         ui: ConsoleUI,
-        media_service: MediaService,
-        audio_service: AudioService,
-        analysis_service: AnalysisService,
-        video_service: VideoService,
-        captioning_service: CaptioningService
+        provider: ProviderService,
+        editor: EditorService
     ):
         self.config = config
         self.ui = ui
-        self.media = media_service
-        self.audio = audio_service
-        self.analysis = analysis_service
-        self.video = video_service
-        self.captioning = captioning_service
+        self.provider = provider
+        self.editor = editor
+
+    def _cleanup_workspace(self, work_dir: Path):
+        if work_dir and work_dir.exists():
+            self.ui.log(f"Membersihkan folder kerja sementara: {work_dir}")
+            shutil.rmtree(work_dir, ignore_errors=True)
+
+    def _process_url(self, url: str):
+        """Memproses URL video dari awal hingga akhir."""
+        safe_name, work_dir = self._prepare_workspace(url)
+        
+        clips = self._get_clips_for_processing(url, work_dir)
+        if not clips:
+            self.ui.show_error("Tidak ada klip yang ditemukan atau dibuat.")
+            return
+
+        raw_clip_paths = self._cut_raw_clips(clips, url, work_dir)
+        if not raw_clip_paths:
+            self.ui.show_error("Gagal memotong klip mentah sama sekali.")
+            return
+
+        tracked_results = self._track_clips(raw_clip_paths, work_dir)
+        
+        final_clips = self._render_final_clips(tracked_results, work_dir, safe_name)
+
+        output_folder = self.config.paths.OUTPUT_DIR / safe_name
+        self.ui.show_success(output_folder, final_clips)
+
+        # Panggil fungsi pemangkasan setelah proses berhasil
+        self.ui.prune_output_directory(self.config.paths.OUTPUT_DIR)
+
+    def run(self, url: str):
+        """Menjalankan pipeline lengkap."""
+        work_dir: Optional[Path] = None
+        try:
+            safe_name, work_dir = self._prepare_workspace(url)
+            self._process_url(url)
+
+        except Exception as e:
+            logging.error("Orchestrator Error", exc_info=True)
+            self.ui.show_error(str(e))
+        finally:
+            if work_dir:
+                self._cleanup_workspace(work_dir)
 
     def _prepare_workspace(self, url: str) -> Tuple[str, Path]:
         """Mempersiapkan folder kerja untuk proses pipeline."""
         self.ui.show_step("Persiapan Workspace")
-        safe_name = self.media.get_safe_filename(url)
+        safe_name = self.provider.get_video_metadata(url).get('title', 'Unknown_Video')
         work_dir = self.config.paths.TEMP_DIR / safe_name
         work_dir.mkdir(parents=True, exist_ok=True)
         self.ui.log(f"Working Directory: {work_dir}")
@@ -77,16 +107,16 @@ class Orchestrator:
             return clips
  
         self.ui.log("Mode AI: Menganalisis video untuk klip potensial...")
-        transcript = self.media.get_transcript(url)
+        transcript = self.provider.get_transcript(url)
         
-        audio_wav_path = self.audio.prepare_audio_for_analysis(url, work_dir, "full_audio")
+        audio_wav_path = self.provider.prepare_audio_for_analysis(url, work_dir, "full_audio")
         if not audio_wav_path:
             raise RuntimeError("Gagal menyiapkan audio untuk analisis.")
 
         prompt = self.config.get_prompt_template()
         cache_path = str(work_dir / "summary.json")
         
-        summary = self.analysis.analyze_video(
+        summary = self.provider.analyze_video(
             transcript=transcript,
             audio_path=str(audio_wav_path),
             prompt=prompt,
@@ -98,12 +128,12 @@ class Orchestrator:
     def _cut_raw_clips(self, clips: List[Clip], url: str, work_dir: Path) -> List[Path]:
         """Memotong klip mentah dari stream video."""
         self.ui.show_step("Memotong Klip Video")
-        video_url, audio_url = self.media.get_stream_urls(url)
+        video_url, audio_url = self.provider.get_stream_urls(url)
         if not video_url:
             raise RuntimeError("Gagal mendapatkan URL stream video.")
 
         raw_clips_dir = work_dir / "raw_clips"
-        created_clip_paths = self.video.batch_create_clips(
+        created_clip_paths = self.editor.batch_create_clips(
             clips=clips,
             video_url=video_url,
             audio_url=audio_url,
@@ -133,7 +163,7 @@ class Orchestrator:
             
             try:
                 # Eksekusi Sekuensial: Mencegah OOM dengan memproses satu per satu
-                result = self.video.track_subject(str(clip_path), str(output_tracked), progress_callback=progress_cb)
+                result = self.editor.track_subject(str(clip_path), str(output_tracked), progress_callback=progress_cb)
                 tracked_results.append((clip_path, result))
             except Exception as e:
                 logging.error(f"❌ Gagal tracking klip {clip_path.name}: {e}")
@@ -151,7 +181,7 @@ class Orchestrator:
         final_clips = []
         
         # Tentukan jumlah worker berdasarkan kemampuan hardware (GPU vs CPU)
-        if self.video.processor.is_gpu_enabled:
+        if self.editor.processor.is_gpu_enabled:
             max_workers = 1
             logging.info("🚀 GPU Encoder terdeteksi: Rendering final dibatasi 1 worker.")
         else:
@@ -162,13 +192,13 @@ class Orchestrator:
             original_path, track_res = item
             try:
                 sub_path = final_dir / "subs" / f"{original_path.stem}.ass"
-                self.captioning.generate_subtitles_for_clip(
+                self.editor.generate_subtitles_for_clip(
                     str(original_path), str(sub_path), work_dir, 
                     self.config.karaoke_chunk_size, track_res['width'], track_res['height']
                 )
 
                 final_out = final_dir / f"final_{original_path.name}"
-                if self.video.render_final_video(
+                if self.editor.render_final_video(
                     video_path=str(track_res['tracked_video']), 
                     audio_path=str(original_path), 
                     subtitle_path=str(sub_path), 
@@ -189,37 +219,3 @@ class Orchestrator:
                     final_clips.append(result)
                     
         return sorted(final_clips, key=lambda p: p.name)
-
-    def run(self, url: str):
-        """Menjalankan pipeline lengkap."""
-        work_dir: Optional[Path] = None
-        try:
-            safe_name, work_dir = self._prepare_workspace(url)
-            
-            clips = self._get_clips_for_processing(url, work_dir)
-            if not clips:
-                self.ui.show_error("Tidak ada klip yang ditemukan atau dibuat.")
-                return
-
-            raw_clip_paths = self._cut_raw_clips(clips, url, work_dir)
-            if not raw_clip_paths:
-                self.ui.show_error("Gagal memotong klip mentah sama sekali.")
-                return
-
-            tracked_results = self._track_clips(raw_clip_paths, work_dir)
-            
-            final_clips = self._render_final_clips(tracked_results, work_dir, safe_name)
-
-            output_folder = self.config.paths.OUTPUT_DIR / safe_name
-            self.ui.show_success(output_folder, final_clips)
-
-            # Panggil fungsi pemangkasan setelah proses berhasil
-            self.ui.prune_output_directory(self.config.paths.OUTPUT_DIR)
-
-        except Exception as e:
-            logging.error("Orchestrator Error", exc_info=True)
-            self.ui.show_error(str(e))
-        finally:
-            if work_dir and work_dir.exists():
-                self.ui.log(f"Membersihkan folder kerja sementara: {work_dir}")
-                shutil.rmtree(work_dir, ignore_errors=True)

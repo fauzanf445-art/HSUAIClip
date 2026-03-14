@@ -49,9 +49,6 @@ class YouTubeAdapter(IMediaDownloader):
 
     @staticmethod
     def extract_cookies_from_browser(target_path: Path) -> bool:
-        """
-        Mencoba mengekstrak cookies dari browser yang didukung.
-        """
         supported_browsers = ["chrome", "firefox", "edge", "opera", "brave"]
         
         for browser in supported_browsers:
@@ -79,9 +76,6 @@ class YouTubeAdapter(IMediaDownloader):
 
     @staticmethod
     def check_and_setup_cookies(cookies_path: Union[str, Path]) -> Optional[Path]:
-        """
-        Mengecek dan membantu pengguna membuat file cookies jika diperlukan.
-        """        
         path_obj = Path(cookies_path)
         if path_obj.exists() and path_obj.stat().st_size > 0:
             logging.debug(f"✅ File cookies ditemukan di: {path_obj}")
@@ -105,7 +99,6 @@ class YouTubeAdapter(IMediaDownloader):
     def _get_base_opts(self) -> Dict[str, Any]:
         opts: Dict[str, Any] = {
             'no_warnings': False,
-            'verbose': True,
             'noprogress': True,
             'socket_timeout': 30,
             'retries': 10,

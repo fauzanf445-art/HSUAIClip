@@ -1,5 +1,4 @@
-import os
-from src.config.settings import AppConfig
+from src.config import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
 
 # Adapters
@@ -11,21 +10,11 @@ from src.infrastructure.adapters.mediapipe_adapter import MediaPipeAdapter
 from src.infrastructure.adapters.subtitle_writer import AssSubtitleWriter
 
 # Services
-from src.application.services.media_service import MediaService
-from src.application.services.audio_service import AudioService
-from src.application.services.analysis_service import AnalysisService
-from src.application.services.video_service import VideoService
-from src.application.services.captioning_service import CaptioningService
-
-# Pipeline
-from src.application.pipeline.orchestrator import Orchestrator
+from src.service.provider_service import ProviderService
+from src.service.editor_service import EditorService
+from src.service.orchestrator import Orchestrator
 
 class Container:
-    """
-    Dependency Injection Container.
-    Bertanggung jawab untuk menginisialisasi semua adapter dan service,
-    serta merakit Orchestrator.
-    """
     def __init__(self, config: AppConfig, ui: ConsoleUI, api_key: str):
         self.config = config
         self.ui = ui
@@ -54,15 +43,23 @@ class Container:
 
         self.subtitle_writer = AssSubtitleWriter(config=config.subtitle)
 
-        # 2. Init Services
-        self.media_service = MediaService(downloader=self.yt_adapter)
-        self.audio_service = AudioService(downloader=self.yt_adapter, processor=self.ffmpeg_adapter)
-        self.analysis_service = AnalysisService(analyzer=self.gemini_adapter)
-        self.video_service = VideoService(processor=self.ffmpeg_adapter, tracker=self.mp_adapter)
-        self.captioning_service = CaptioningService(transcriber=self.whisper_adapter, writer=self.subtitle_writer)
+        # 2. Init Services (Abstraksi Baru)
+        self.provider_service = ProviderService(
+            downloader=self.yt_adapter,
+            processor=self.ffmpeg_adapter,
+            analyzer=self.gemini_adapter
+        )
+        
+        self.editor_service = EditorService(
+            processor=self.ffmpeg_adapter,
+            tracker=self.mp_adapter,
+            transcriber=self.whisper_adapter,
+            writer=self.subtitle_writer
+        )
 
         # 3. Init Orchestrator
         self.orchestrator = Orchestrator(
-            config, ui, self.media_service, self.audio_service, 
-            self.analysis_service, self.video_service, self.captioning_service
+            config, ui, 
+            provider=self.provider_service, 
+            editor=self.editor_service
         )

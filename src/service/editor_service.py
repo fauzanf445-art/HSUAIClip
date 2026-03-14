@@ -5,45 +5,35 @@ from pathlib import Path
 from typing import List, Optional, Callable
 from tqdm import tqdm
 
-from src.domain.interfaces import IVideoProcessor, IFaceTracker, TrackResult
+from src.domain.interfaces import IVideoProcessor, IFaceTracker, ITranscriber, ISubtitleWriter, TrackResult
 from src.domain.models import Clip
-from src.infrastructure.common.utils import sanitize_filename
 
-class VideoService:
-    """
-    Application Service untuk memanipulasi video.
-    Mengorkestrasi pemotongan klip (FFmpeg) dan tracking wajah (MediaPipe).
-    """
+class EditorService:
 
-    def __init__(self, processor: IVideoProcessor, tracker: IFaceTracker):
+    def __init__(self, processor: IVideoProcessor, tracker: IFaceTracker, transcriber: ITranscriber, writer: ISubtitleWriter):
         self.processor = processor
         self.tracker = tracker
+        self.transcriber = transcriber
+        self.writer = writer
 
     def batch_create_clips(self, clips: List[Clip], video_url: str, audio_url: Optional[str], output_dir: Path) -> List[Path]:
         """
         Membuat klip video dari stream URL secara paralel.
         Jumlah workers disesuaikan otomatis berdasarkan jenis encoder (GPU/CPU).
         """
-        # Tentukan strategi konkurensi
         if self.processor.is_gpu_enabled:
-            # Jika menggunakan GPU (NVENC/QSV), batasi worker agar tidak kehabisan sesi encoder/VRAM.
-            # Kebanyakan kartu grafis consumer (NVIDIA) dibatasi 3-5 sesi concurrent.
-            # Kita set 1 atau 2 agar aman dan stabil.
             max_workers = 1 
             logging.info("🚀 GPU Encoder terdeteksi: Membatasi proses paralel ke 1 worker untuk stabilitas.")
         else:
-            # Jika CPU, gunakan jumlah core yang tersedia
             max_workers = os.cpu_count() or 2
             logging.info(f"⚙️ CPU Encoder terdeteksi: Menggunakan {max_workers} worker paralel.")
 
         output_dir.mkdir(parents=True, exist_ok=True)
         created_files: List[Path] = []
         
-        def _process_clip(clip: Clip) -> Optional[Path]:
-            # Sanitasi nama file
+        def _process_clip(clip: Clip) -> Optional[Path]:            
             safe_title = "".join([c for c in clip.title if c.isalnum() or c in (' ', '_', '-')]).strip()
-            # Gunakan ID pendek untuk keunikan
-            filename = f"{clip.id[:8]}_{safe_title}.mp4"
+            filename = f"{clip.id[:8]}_{safe_title}.mp4"            
             output_path = output_dir / filename
             
             # Cek cache
@@ -95,3 +85,25 @@ class VideoService:
 
     def convert_to_wav(self, input_path: str, output_path: str) -> bool:
         return self.processor.convert_audio_to_wav(input_path, output_path)
+
+    def generate_subtitles_for_clip(
+        self,
+        clip_audio_path: str,
+        output_subtitle_path: str,
+        cache_dir: Path,
+        chunk_size: int,
+        video_width: int,
+        video_height: int
+    ) -> Optional[Path]:
+        """
+        Membuat file subtitle .ass untuk satu klip.
+        """
+        output_path = Path(output_subtitle_path)
+        
+        if output_path.exists():
+            logging.debug(f"♻️ Subtitle .ass cached: {output_path.name}")
+            return output_path
+
+        # transcription_cache_path = cache_dir / f"{Path(clip_audio_path).stem}_transcript.json"
+        # transcription_data = self._get_transcription_data(clip_audio_path, transcription_cache_path)
+        return None

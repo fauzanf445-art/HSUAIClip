@@ -22,7 +22,6 @@ class TrackResult(TypedDict):
     height: int
 
 class IVideoProcessor(ABC):
-    """Interface untuk manipulasi video (FFmpeg/OpenCV)."""
     
     @property
     @abstractmethod
@@ -38,17 +37,14 @@ class IVideoProcessor(ABC):
     def convert_audio_to_wav(self, input_path: str, output_path: str) -> bool: ...
 
 class ITranscriber(ABC):
-    """Interface untuk AI Transcriber (Whisper)."""
     @abstractmethod
     def transcribe(self, audio_path: str) -> List[TranscriptionSegment]: ...
 
 class IContentAnalyzer(ABC):
-    """Interface untuk AI Analysis (Gemini)."""
     @abstractmethod
     def analyze_content(self, transcript: str, audio_path: str, prompt: str) -> VideoSummary: ...
 
 class IFaceTracker(ABC):
-    """Interface untuk Motion Tracking (MediaPipe)."""
     @abstractmethod
     def track_and_crop(self, input_path: str, output_path: str, progress_callback: Optional[Callable[[int, int], None]] = None) -> TrackResult: ...
 

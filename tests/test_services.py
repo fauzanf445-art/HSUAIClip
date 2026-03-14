@@ -10,7 +10,7 @@ from src.domain.interfaces import (
 )
 
 # Import Config & UI for Orchestrator test
-from src.config.settings import AppConfig, AppPaths
+from src.config import AppConfig, AppPaths
 from src.infrastructure.cli_ui import ConsoleUI
 
 # Import Services yang akan dites
@@ -21,7 +21,7 @@ from src.application.services.audio_service import AudioService
 from src.application.services.captioning_service import CaptioningService
 
 # Import Orchestrator
-from src.application.pipeline.orchestrator import Orchestrator
+from src.application.orchestrator import Orchestrator
 
 class TestMediaService(unittest.TestCase):
     def setUp(self):

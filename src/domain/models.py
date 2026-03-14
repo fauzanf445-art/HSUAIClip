@@ -5,10 +5,6 @@ from typing import Dict, Any
 
 @dataclass
 class Clip:
-    """
-    Mewakili satu klip video. Ini adalah entitas domain murni,
-    hanya berisi data tanpa logika bisnis atau ketergantungan eksternal.
-    """
     id: str
     title: str
     start_time: float

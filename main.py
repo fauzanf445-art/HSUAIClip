@@ -3,9 +3,9 @@ import argparse
 from dotenv import load_dotenv
 
 # Config & UI
-from src.config.settings import AppConfig
+from src.config import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
-from src.infrastructure.common.logger import setup_logging
+from src.common import setup_logging
 from src.container import Container
 
 def setup_environment(config: AppConfig):

@@ -7,7 +7,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 # Config & UI
-from src.config.settings import AppConfig
+from src.config import AppConfig
 from src.infrastructure.cli_ui import ConsoleUI
 from src.container import Container
 
